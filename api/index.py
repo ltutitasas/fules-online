@@ -126,7 +126,7 @@ def _do_post(article):
     now       = datetime.now()
 
     data = [
-        ("id","0"),("returnId","-1"),("smartyNow",str(int(time.time()))),
+        ("id",""),("returnId","-1"),("smartyNow",str(int(time.time()))),
         ("titleSlug",""),("title",title),("extraTitle",""),("facebookTitle",""),
         ("generatedTV3Title",""),("intro",""),("Pastabos",""),("text",html_body),
         ("leadPhoto[path]",""),("leadPhoto[title]",""),("leadPhoto[size]","l"),
@@ -136,7 +136,7 @@ def _do_post(article):
         ("mainCategory", str(cat_ids[0]) if cat_ids else "20"),
     ]
     for cid in cat_ids: data.append(("categories[]", str(cid)))
-    for cid in cat_ids: data.append((f"priority[{cid}]", "4"))
+    for cid in cat_ids: data.append((f"priority[{cid}]", "1000"))
     data += [
         ("source",str(source_id)),("realSource","0"),("realSource","0"),
         ("disableComments","0"),("commentsForUsers","0"),("isLiveNews","0"),("tags",""),
@@ -145,11 +145,11 @@ def _do_post(article):
     data += [
         ("n18","0"),("sensitive","0"),("top10","0"),("useSpecNews","0"),
         ("orderedArticle","0"),("leftBlocks","0"),("cacheKey",""),
-        ("status","0"),("status","1"),("exportArticle","1"),
+        ("status","0"),("exportArticle","1"),
         ("publish[StartDate]", now.strftime("%Y-%m-%d")),
         ("publish[StartTime]", now.strftime("%H:%M")),
         ("publish[EndDate]","2030-01-01"),("publish[EndTime]","00:00"),
-        ("titlePage","0"),("titlePagePriority","6"),
+        ("titlePage","0"),("titlePagePriority","1000"),
     ]
 
     if not SPORTAS_USER:
@@ -170,8 +170,7 @@ def _do_post(article):
         save_url = action if action.startswith("http") else "https://www.sportas.lt" + action
     else:
         save_url = f"{_BASE}/saveArticle/"
-    files = [(k, (None, v)) for k, v in data]
-    r = sess.post(save_url, files=files,
+    r = sess.post(save_url, data=data,
                   allow_redirects=False, timeout=30,
                   headers={"Referer": f"{_BASE}/editArticle/",
                            "Origin": "https://www.sportas.lt"})
