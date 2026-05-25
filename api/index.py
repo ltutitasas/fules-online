@@ -72,13 +72,22 @@ def _match_source(sources, site_name):
     return "1"
 
 def _session():
+    from bs4 import BeautifulSoup
     sess = _req.Session()
     sess.headers.update({"User-Agent": _UA})
     if not SPORTAS_USER:
         return sess
-    login_r = sess.post("https://www.sportas.lt/Admin/login",
-                        data={"Loginas": SPORTAS_USER, "Password": SPORTAS_PASS},
-                        allow_redirects=True, timeout=15)
+    login_page = sess.get("https://www.sportas.lt/Admin/login",
+                          allow_redirects=True, timeout=15)
+    soup = BeautifulSoup(login_page.text, "html.parser")
+    form_data = {"Loginas": SPORTAS_USER, "Password": SPORTAS_PASS}
+    for inp in soup.find_all("input", {"type": "hidden"}):
+        name = inp.get("name", "")
+        value = inp.get("value", "")
+        if name:
+            form_data[name] = value
+    sess.post("https://www.sportas.lt/Admin/login",
+              data=form_data, allow_redirects=True, timeout=15)
     _kv_set("sportas_cookies", dict(sess.cookies))
     return sess
 
