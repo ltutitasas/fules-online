@@ -74,16 +74,12 @@ def _match_source(sources, site_name):
 def _session():
     sess = _req.Session()
     sess.headers.update({"User-Agent": _UA})
-    cookies = _kv_get("sportas_cookies")
-    if cookies:
-        for k, v in cookies.items():
-            sess.cookies.set(k, v, domain="www.sportas.lt")
-    r = sess.get(f"{_BASE}/editArticle/", allow_redirects=False, timeout=15)
-    if r.status_code in (301, 302):
-        sess.post("https://www.sportas.lt/Admin/login",
-                  data={"Loginas": SPORTAS_USER, "Password": SPORTAS_PASS},
-                  allow_redirects=True, timeout=15)
-        _kv_set("sportas_cookies", dict(sess.cookies))
+    if not SPORTAS_USER:
+        return sess
+    login_r = sess.post("https://www.sportas.lt/Admin/login",
+                        data={"Loginas": SPORTAS_USER, "Password": SPORTAS_PASS},
+                        allow_redirects=True, timeout=15)
+    _kv_set("sportas_cookies", dict(sess.cookies))
     return sess
 
 def _sources(sess):
@@ -147,11 +143,13 @@ def _do_post(article):
         ("titlePage","0"),("titlePagePriority","6"),
     ]
 
+    if not SPORTAS_USER:
+        return False, "SPORTAS_USER env var nenustatytas"
     r = sess.post(f"{_BASE}/saveArticle", data=data, allow_redirects=False, timeout=30)
     if r.status_code == 302:
         _kv_set("sportas_cookies", dict(sess.cookies))
         return True, "OK"
-    return False, f"HTTP {r.status_code}"
+    return False, f"HTTP {r.status_code} (url={r.url[:80]})"
 
 
 _INDEX_HTML = """<!DOCTYPE html>
