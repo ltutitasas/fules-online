@@ -1,8 +1,4 @@
 {
   "version": 2,
-  "functions": {
-    "api/*.py": {
-      "maxDuration": 30
-    }
-  }
+  "outputDirectory": "public"
 }
