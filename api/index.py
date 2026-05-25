@@ -170,7 +170,8 @@ def _do_post(article):
         save_url = action if action.startswith("http") else "https://www.sportas.lt" + action
     else:
         save_url = f"{_BASE}/saveArticle/"
-    r = sess.post(save_url, data=data,
+    files = [(k, (None, v)) for k, v in data]
+    r = sess.post(save_url, files=files,
                   allow_redirects=False, timeout=30,
                   headers={"Referer": f"{_BASE}/editArticle/",
                            "Origin": "https://www.sportas.lt"})
