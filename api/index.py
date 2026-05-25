@@ -171,7 +171,8 @@ def _do_post(article):
     if r.status_code == 302:
         _kv_set("sportas_cookies", dict(sess.cookies))
         return True, "OK"
-    return False, f"HTTP {r.status_code} (url={r.url[:80]})"
+    body = r.text[:300].replace("\n", " ").replace("\r", "")
+    return False, f"HTTP {r.status_code} | editArticle_url={edit_r.url[:60]} | cookies={list(sess.cookies.keys())} | body={body}"
 
 
 _INDEX_HTML = """<!DOCTYPE html>
