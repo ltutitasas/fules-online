@@ -154,10 +154,20 @@ def _do_post(article):
 
     if not SPORTAS_USER:
         return False, "SPORTAS_USER env var nenustatytas"
-    check = sess.get(f"{_BASE}/editArticle/", allow_redirects=False, timeout=15)
-    if check.status_code in (301, 302):
+    from bs4 import BeautifulSoup as _BS
+    edit_r = sess.get(f"{_BASE}/editArticle/", allow_redirects=True, timeout=15)
+    if edit_r.url and "login" in edit_r.url.lower():
         return False, f"Login nepavyko (cookies: {list(sess.cookies.keys())})"
-    r = sess.post(f"{_BASE}/saveArticle", data=data, allow_redirects=False, timeout=30)
+    edit_soup = _BS(edit_r.text, "html.parser")
+    for inp in edit_soup.find_all("input", {"type": "hidden"}):
+        name = inp.get("name", "")
+        value = inp.get("value", "")
+        if name and not any(k == name for k, v in data):
+            data.append((name, value))
+    r = sess.post(f"{_BASE}/saveArticle", data=data,
+                  allow_redirects=False, timeout=30,
+                  headers={"Referer": f"{_BASE}/editArticle/",
+                           "Origin": "https://www.sportas.lt"})
     if r.status_code == 302:
         _kv_set("sportas_cookies", dict(sess.cookies))
         return True, "OK"
