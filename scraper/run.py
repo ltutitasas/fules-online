@@ -81,12 +81,7 @@ SITES = [
     {"name":"Lietuva Basketball","sport":"krepšinis", "rss":"https://lietuva.basketball/feed/"},
     {"name":"BC Rytas",          "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
     # 🏀 KREPŠINIS – HTTP
-    {"name":"LKL", "sport":"krepšinis", "method":"http",
-     "url":"https://lkl.lt/straipsniai",
-     "link_patterns":["/straipsniai/1","/straipsniai/2","/straipsniai/3",
-                      "/straipsniai/4","/straipsniai/5","/straipsniai/6",
-                      "/straipsniai/7","/straipsniai/8","/straipsniai/9"],
-     "base_url":"https://lkl.lt"},
+    {"name":"LKL", "sport":"krepšinis", "rss":"https://lkl.lt/feed/"},
     {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=zalgiris&subCategory=naujienos",
      "selectors":{"articles":"article",
