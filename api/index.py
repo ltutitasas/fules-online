@@ -155,6 +155,19 @@ def _do_post(article):
 
 
 # ── Routes ─────────────────────────────────────────────────────────
+@app.route("/")
+def serve_index():
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for path in [
+        os.path.join(base, "public", "index.html"),
+        os.path.join(os.path.dirname(__file__), "..", "public", "index.html"),
+        "public/index.html",
+    ]:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return Response(f.read(), content_type="text/html; charset=utf-8")
+    return "Not found", 404
+
 @app.route("/api/articles", methods=["GET"])
 def articles():
     data   = _kv_get("articles")   or []
