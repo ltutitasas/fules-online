@@ -164,7 +164,13 @@ def _do_post(article):
         value = inp.get("value", "")
         if name and not any(k == name for k, v in data):
             data.append((name, value))
-    r = sess.post(f"{_BASE}/saveArticle", data=data,
+    form = edit_soup.find("form")
+    action = form.get("action", "") if form else ""
+    if action:
+        save_url = action if action.startswith("http") else "https://www.sportas.lt" + action
+    else:
+        save_url = f"{_BASE}/saveArticle/"
+    r = sess.post(save_url, data=data,
                   allow_redirects=False, timeout=30,
                   headers={"Referer": f"{_BASE}/editArticle/",
                            "Origin": "https://www.sportas.lt"})
@@ -172,7 +178,7 @@ def _do_post(article):
         _kv_set("sportas_cookies", dict(sess.cookies))
         return True, "OK"
     body = r.text[:300].replace("\n", " ").replace("\r", "")
-    return False, f"HTTP {r.status_code} | editArticle_url={edit_r.url[:60]} | cookies={list(sess.cookies.keys())} | body={body}"
+    return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | body={body}"
 
 
 _INDEX_HTML = """<!DOCTYPE html>
