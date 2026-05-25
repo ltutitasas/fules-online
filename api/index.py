@@ -155,12 +155,6 @@ def _do_post(article):
 
 
 # ── Routes ─────────────────────────────────────────────────────────
-@app.route("/")
-def index():
-    html_path = os.path.join(os.path.dirname(__file__), "..", "public", "index.html")
-    with open(html_path, encoding="utf-8") as f:
-        return Response(f.read(), content_type="text/html; charset=utf-8")
-
 @app.route("/api/articles", methods=["GET"])
 def articles():
     data   = _kv_get("articles")   or []
