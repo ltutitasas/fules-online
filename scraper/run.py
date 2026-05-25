@@ -81,7 +81,6 @@ SITES = [
     {"name":"Lietuva Basketball","sport":"krepšinis", "rss":"https://lietuva.basketball/feed/"},
     {"name":"BC Rytas",          "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
     # 🏀 KREPŠINIS – HTTP
-    {"name":"LKL", "sport":"krepšinis", "rss":"https://lkl.lt/feed/"},
     {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=zalgiris&subCategory=naujienos",
      "selectors":{"articles":"article",
@@ -133,15 +132,7 @@ def fetch_rss(site: dict) -> list:
 
 def fetch_http(site: dict) -> list:
     try:
-        headers = {
-            "User-Agent": UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "lt-LT,lt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Referer": site.get("base_url", "https://google.com") + "/",
-            "Connection": "keep-alive",
-        }
-        r = _req.get(site["url"], headers=headers, timeout=15)
+        r = _req.get(site["url"], headers={"User-Agent": UA}, timeout=15)
         if r.status_code != 200:
             print(f"  ⚠️  {site['name']}: HTTP {r.status_code}")
             return []
