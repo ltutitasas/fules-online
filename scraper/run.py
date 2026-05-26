@@ -64,7 +64,7 @@ SITES = [
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
      "base_url":"https://toplyga.lt"},
     {"name":"Žalgiris futbolas", "sport":"futbolas", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=futbolas&subCategory=naujienos",
+     "url":"https://zalgiris.lt/naujienos?category=futbolas",
      "selectors":{"articles":"article",
                   "title":"div.font-semibold a",
                   "link":"div.font-semibold a",
@@ -82,7 +82,7 @@ SITES = [
     {"name":"BC Rytas",          "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
     # 🏀 KREPŠINIS – HTTP
     {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=zalgiris&subCategory=naujienos",
+     "url":"https://zalgiris.lt/naujienos?category=zalgiris",
      "selectors":{"articles":"article",
                   "title":"div.font-semibold a",
                   "link":"div.font-semibold a",
