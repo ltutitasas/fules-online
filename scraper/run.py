@@ -205,7 +205,10 @@ def _sort_key(art):
     try:
         return parsedate_to_datetime(d).replace(tzinfo=None)
     except:
-        return datetime.min
+        try:
+            return datetime.fromisoformat(d.replace("Z",""))
+        except:
+            return datetime.min
 
 # ── Pagrindinė funkcija ────────────────────────────────────────────
 def main():
@@ -213,8 +216,9 @@ def main():
     print(f"🏆 SCRAPER  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'═'*55}\n")
 
-    seen_ids = kv_smembers("seen_ids")
-    print(f"📦 Žinomų straipsnių: {len(seen_ids)}\n")
+    seen_ids    = kv_smembers("seen_ids")
+    dates_cache = kv_get("dates_cache") or {}   # {article_id: iso_date}
+    print(f"📦 Žinomų straipsnių: {len(seen_ids)}, datos cache: {len(dates_cache)}\n")
 
     rss_sites  = [s for s in SITES if "rss" in s]
     http_sites = [s for s in SITES if s.get("method") == "http"]
@@ -246,6 +250,19 @@ def main():
     new_ids = {a["id"] for a in all_articles if a["id"] not in seen_ids}
     print(f"\n📊 Iš viso: {len(all_articles)} | Naujų: {len(new_ids)}")
 
+    # Datos: naujoms be datos – fiksuojame dabar; senoms – atkuriame iš cache
+    now_iso = datetime.now(timezone.utc).isoformat()
+    dates_changed = False
+    for art in all_articles:
+        aid = art["id"]
+        if not art.get("date"):
+            if aid in dates_cache:
+                art["date"] = dates_cache[aid]      # atkuriame išsaugotą datą
+            elif aid in new_ids:
+                art["date"] = now_iso               # pirmas kartas – fiksuojame
+                dates_cache[aid] = now_iso
+                dates_changed = True
+
     # Rikiuoti pagal datą
     all_articles.sort(key=_sort_key, reverse=True)
 
@@ -260,8 +277,13 @@ def main():
             if dt >= cutoff:
                 recent_ids.append(art["id"])
         except:
-            if not art.get("date"):
-                recent_ids.append(art["id"])
+            try:
+                dt = datetime.fromisoformat(art["date"].replace("Z",""))
+                if dt.replace(tzinfo=None) >= cutoff.replace(tzinfo=None):
+                    recent_ids.append(art["id"])
+            except:
+                if art["id"] in new_ids:
+                    recent_ids.append(art["id"])
 
     # NAUJA straipsniai – viršuje
     sorted_arts = (
@@ -275,6 +297,8 @@ def main():
     kv_set("recent_ids", recent_ids,   ex=3600 * 3)
     if new_ids:
         kv_sadd("seen_ids", *list(new_ids))
+    if dates_changed:
+        kv_set("dates_cache", dates_cache, ex=86400 * 30)  # 30 dienų
 
     print(f"✅ Išsaugota {len(sorted_arts)} straipsnių, {len(new_ids)} naujų\n")
 

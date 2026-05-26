@@ -338,10 +338,13 @@ def _sort_key(art):
     d = art.get("date","")
     if not d: return datetime.min
     try: return parsedate_to_datetime(d).replace(tzinfo=None)
-    except: return datetime.min
+    except:
+        try: return datetime.fromisoformat(d.replace("Z",""))
+        except: return datetime.min
 
 def run_scraper():
-    seen_ids = _kv_smembers("seen_ids")
+    seen_ids    = _kv_smembers("seen_ids")
+    dates_cache = _kv_get("dates_cache") or {}
     rss_sites  = [s for s in _SITES if "rss" in s]
     http_sites = [s for s in _SITES if s.get("method") == "http"]
     all_arts   = []
@@ -352,6 +355,20 @@ def run_scraper():
             try: all_arts.extend(fut.result())
             except: pass
     new_ids = {a["id"] for a in all_arts if a["id"] not in seen_ids}
+
+    # Datos: naujoms be datos – fiksuojame dabar; senoms – atkuriame iš cache
+    now_iso = datetime.now(timezone.utc).isoformat()
+    dates_changed = False
+    for art in all_arts:
+        aid = art["id"]
+        if not art.get("date"):
+            if aid in dates_cache:
+                art["date"] = dates_cache[aid]
+            elif aid in new_ids:
+                art["date"] = now_iso
+                dates_cache[aid] = now_iso
+                dates_changed = True
+
     all_arts.sort(key=_sort_key, reverse=True)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
     recent_ids = []
@@ -361,13 +378,20 @@ def run_scraper():
             if parsedate_to_datetime(art.get("date","")) >= cutoff:
                 recent_ids.append(art["id"])
         except:
-            if not art.get("date"): recent_ids.append(art["id"])
+            try:
+                dt = datetime.fromisoformat(art["date"].replace("Z",""))
+                if dt.replace(tzinfo=None) >= cutoff.replace(tzinfo=None):
+                    recent_ids.append(art["id"])
+            except:
+                if art["id"] in new_ids: recent_ids.append(art["id"])
     sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
                    [a for a in all_arts if a["id"] not in recent_ids])
     _kv_set("articles",   sorted_arts, ex=86400*2)
     _kv_set("recent_ids", recent_ids,  ex=3600*3)
     if new_ids:
         _kv_sadd("seen_ids", *list(new_ids))
+    if dates_changed:
+        _kv_set("dates_cache", dates_cache, ex=86400*30)
     return len(sorted_arts), len(new_ids)
 
 
