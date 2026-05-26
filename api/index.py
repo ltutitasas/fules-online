@@ -27,10 +27,23 @@ def _kv_get(key):
     result = r.json().get("result")
     return json.loads(result) if result else None
 
-def _kv_set(key, value):
+def _kv_set(key, value, ex=86400):
     _req.post(f"{KV_URL}/pipeline",
               headers={"Authorization": f"Bearer {KV_TOKEN}"},
-              json=[["SET", key, json.dumps(value, ensure_ascii=False), "EX", 86400]],
+              json=[["SET", key, json.dumps(value, ensure_ascii=False), "EX", ex]],
+              timeout=5)
+
+def _kv_smembers(key):
+    if not KV_URL: return set()
+    r = _req.get(f"{KV_URL}/smembers/{key}",
+                 headers={"Authorization": f"Bearer {KV_TOKEN}"}, timeout=5)
+    return set(r.json().get("result") or [])
+
+def _kv_sadd(key, *members):
+    if not KV_URL or not members: return
+    _req.post(f"{KV_URL}/pipeline",
+              headers={"Authorization": f"Bearer {KV_TOKEN}"},
+              json=[["SADD", key] + list(members), ["EXPIRE", key, 86400 * 7]],
               timeout=5)
 
 
