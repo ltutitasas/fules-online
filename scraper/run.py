@@ -258,7 +258,7 @@ def main():
         if not art.get("date"):
             if aid in dates_cache:
                 art["date"] = dates_cache[aid]      # atkuriame išsaugotą datą
-            elif aid in new_ids:
+            else:
                 art["date"] = now_iso               # pirmas kartas – fiksuojame
                 dates_cache[aid] = now_iso
                 dates_changed = True

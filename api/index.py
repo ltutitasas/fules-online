@@ -364,8 +364,8 @@ def run_scraper():
         if not art.get("date"):
             if aid in dates_cache:
                 art["date"] = dates_cache[aid]
-            elif aid in new_ids:
-                art["date"] = now_iso
+            else:
+                art["date"] = now_iso        # pirmas kartas – fiksuojame (nauji ar seni)
                 dates_cache[aid] = now_iso
                 dates_changed = True
 
