@@ -243,7 +243,7 @@ def _html_to_text(html):
 
 def _fetch_rss(site):
     try:
-        feed = feedparser.parse(site["rss"])
+        feed = feedparser.parse(site["rss"], request_headers={"User-Agent": _UA}, timeout=5)
         arts = []
         for e in feed.entries[:_MAX]:
             title = e.get("title","").strip()
@@ -268,7 +268,7 @@ def _fetch_rss(site):
 
 def _fetch_http(site):
     try:
-        r = _req.get(site["url"], headers={"User-Agent":_UA}, timeout=12)
+        r = _req.get(site["url"], headers={"User-Agent":_UA}, timeout=5)
         if r.status_code != 200: return []
         soup = _BS4(r.text, "html.parser")
         base = site.get("base_url","")
