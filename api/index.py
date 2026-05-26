@@ -339,7 +339,7 @@ def _sort_key(art):
     if not d: return datetime.min
     try: return parsedate_to_datetime(d).replace(tzinfo=None)
     except:
-        try: return datetime.fromisoformat(d.replace("Z",""))
+        try: return datetime.fromisoformat(d).replace(tzinfo=None)
         except: return datetime.min
 
 def run_scraper():

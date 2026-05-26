@@ -206,7 +206,7 @@ def _sort_key(art):
         return parsedate_to_datetime(d).replace(tzinfo=None)
     except:
         try:
-            return datetime.fromisoformat(d.replace("Z",""))
+            return datetime.fromisoformat(d).replace(tzinfo=None)
         except:
             return datetime.min
 
