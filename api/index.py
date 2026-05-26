@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify, Response
-import json, os, time, requests as _req
-from datetime import datetime
+import json, os, time, requests as _req, hashlib, feedparser
+from datetime import datetime, timedelta, timezone
+from bs4 import BeautifulSoup as _BS4
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.utils import parsedate_to_datetime
 
 app = Flask(__name__)
 
@@ -182,6 +185,174 @@ def _do_post(article):
     return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | body={body}"
 
 
+# ── Inline scraperis (naudojamas /api/refresh) ─────────────────────
+_UA  = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+_MAX = 10
+
+_SITES = [
+    {"name":"FK Banga",       "sport":"futbolas",  "rss":"https://www.fkbanga.lt/feed/"},
+    {"name":"FC Džiugas",     "sport":"futbolas",  "rss":"https://www.fcdziugas.lt/feed/"},
+    {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/"},
+    {"name":"FK Panevėžys",   "sport":"futbolas",  "rss":"https://fk-panevezys.lt/feed/"},
+    {"name":"FK Sūduva",      "sport":"futbolas",  "rss":"https://fksuduva.lt/feed/"},
+    {"name":"FK TransINVEST", "sport":"futbolas",  "rss":"https://fktransinvest.lt/feed/"},
+    {"name":"FA Šiauliai",    "sport":"futbolas",  "rss":"https://siauliufa.lt/feed/"},
+    {"name":"FK Žalgiris",    "sport":"futbolas",  "rss":"https://fkzalgiris.lt/feed/"},
+    {"name":"LFF",            "sport":"futbolas",  "rss":"https://www.lff.lt/feed/"},
+    {"name":"BC Neptūnas",    "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/"},
+    {"name":"BC Lietkabelis", "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/"},
+    {"name":"BC Šiauliai",    "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/"},
+    {"name":"Utenos Juventus","sport":"krepšinis", "rss":"https://utenosjuventus.lt/feed/"},
+    {"name":"Lietuva Basketball","sport":"krepšinis","rss":"https://lietuva.basketball/feed/"},
+    {"name":"BC Rytas",       "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
+    {"name":"Top Lyga", "sport":"futbolas", "method":"http",
+     "url":"https://toplyga.lt/naujienos",
+     "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
+     "base_url":"https://toplyga.lt"},
+    {"name":"Žalgiris futbolas", "sport":"futbolas", "method":"http",
+     "url":"https://zalgiris.lt/naujienos?category=futbolas",
+     "selectors":{"articles":"article","title":"div.font-semibold a",
+                  "link":"div.font-semibold a","image":"figure img"},
+     "base_url":"https://zalgiris.lt"},
+    {"name":"FK Riteriai", "sport":"futbolas", "method":"http",
+     "url":"https://www.fkriteriai.lt/naujienos",
+     "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
+    {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
+     "url":"https://zalgiris.lt/naujienos?category=zalgiris",
+     "selectors":{"articles":"article","title":"div.font-semibold a",
+                  "link":"div.font-semibold a","image":"figure img"},
+     "base_url":"https://zalgiris.lt"},
+    {"name":"KK Nevėžis", "sport":"krepšinis", "method":"http",
+     "url":"https://www.kknevezis.lt/naujienos",
+     "link_pattern":"/naujienos/", "base_url":"https://www.kknevezis.lt"},
+    {"name":"BC Jonava", "sport":"krepšinis", "method":"http",
+     "url":"https://bcjonavahipocredit.lt/naujienos/",
+     "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
+     "base_url":"https://bcjonavahipocredit.lt"},
+]
+
+def _art_id(url, title):
+    return hashlib.md5(f"{url}{title}".encode()).hexdigest()
+
+def _html_to_text(html):
+    if not html: return ""
+    soup = _BS4(html, "html.parser")
+    for t in soup(["script","style","nav","footer","header","aside"]): t.decompose()
+    return " ".join(soup.get_text(" ", strip=True).split())
+
+def _fetch_rss(site):
+    try:
+        feed = feedparser.parse(site["rss"])
+        arts = []
+        for e in feed.entries[:_MAX]:
+            title = e.get("title","").strip()
+            url   = e.get("link","").strip()
+            date  = e.get("published", e.get("updated",""))
+            image = None
+            if hasattr(e,"media_thumbnail") and e.media_thumbnail:
+                image = e.media_thumbnail[0].get("url")
+            elif hasattr(e,"enclosures") and e.enclosures:
+                image = e.enclosures[0].get("href")
+            text = ""
+            if hasattr(e,"content") and e.content:
+                text = _html_to_text(e.content[0].get("value",""))
+            if not text and e.get("summary"):
+                text = _html_to_text(e.get("summary",""))
+            if title and url:
+                arts.append({"site":site["name"],"sport":site.get("sport",""),
+                    "title":title,"url":url,"date":date,"image":image,
+                    "text":text,"source":"RSS","id":_art_id(url,title)})
+        return arts
+    except: return []
+
+def _fetch_http(site):
+    try:
+        r = _req.get(site["url"], headers={"User-Agent":_UA}, timeout=12)
+        if r.status_code != 200: return []
+        soup = _BS4(r.text, "html.parser")
+        base = site.get("base_url","")
+        arts = []
+        if "link_pattern" in site or "link_patterns" in site:
+            patterns = site.get("link_patterns") or [site.get("link_pattern","")]
+            seen = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if not any(p in href for p in patterns) or "#" in href: continue
+                url = href if href.startswith("http") else base + href
+                title = a.get_text(strip=True)
+                if not title or len(title) < 5:
+                    h = a.find(["h2","h3","h4"])
+                    if h: title = h.get_text(strip=True)
+                if not title or len(title) < 5 or url in seen: continue
+                seen.add(url)
+                img = a.find("img")
+                image = None
+                if img:
+                    src = img.get("src") or img.get("data-src","")
+                    image = (base+src if src.startswith("/") else src) or None
+                arts.append({"site":site["name"],"sport":site.get("sport",""),
+                    "title":title,"url":url,"date":"","image":image,
+                    "text":"","source":"HTTP","id":_art_id(url,title)})
+                if len(arts) >= _MAX: break
+        elif "selectors" in site:
+            sel = site["selectors"]
+            for container in soup.select(sel["articles"]):
+                t_el = container.select_one(sel["title"])
+                title = t_el.get_text(strip=True) if t_el else ""
+                l_el  = container.select_one(sel["link"])
+                href  = l_el.get("href","") if l_el else ""
+                url   = href if href.startswith("http") else (base+href if href else "")
+                i_el  = container.select_one(sel.get("image","img"))
+                image = None
+                if i_el:
+                    src = i_el.get("src") or i_el.get("data-src","")
+                    image = (base+src if src.startswith("/") else src) or None
+                if title and url:
+                    arts.append({"site":site["name"],"sport":site.get("sport",""),
+                        "title":title,"url":url,"date":"","image":image,
+                        "text":"","source":"HTTP","id":_art_id(url,title)})
+                if len(arts) >= _MAX: break
+        return arts
+    except: return []
+
+def _sort_key(art):
+    d = art.get("date","")
+    if not d: return datetime.min
+    try: return parsedate_to_datetime(d).replace(tzinfo=None)
+    except: return datetime.min
+
+def run_scraper():
+    seen_ids = _kv_smembers("seen_ids")
+    rss_sites  = [s for s in _SITES if "rss" in s]
+    http_sites = [s for s in _SITES if s.get("method") == "http"]
+    all_arts   = []
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
+        futs.update({ex.submit(_fetch_http, s): s for s in http_sites})
+        for fut in as_completed(futs):
+            try: all_arts.extend(fut.result())
+            except: pass
+    new_ids = {a["id"] for a in all_arts if a["id"] not in seen_ids}
+    all_arts.sort(key=_sort_key, reverse=True)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
+    recent_ids = []
+    for art in all_arts:
+        if art["id"] not in new_ids: continue
+        try:
+            if parsedate_to_datetime(art.get("date","")) >= cutoff:
+                recent_ids.append(art["id"])
+        except:
+            if not art.get("date"): recent_ids.append(art["id"])
+    sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
+                   [a for a in all_arts if a["id"] not in recent_ids])
+    _kv_set("articles",   sorted_arts, ex=86400*2)
+    _kv_set("recent_ids", recent_ids,  ex=3600*3)
+    if new_ids:
+        _kv_sadd("seen_ids", *list(new_ids))
+    return len(sorted_arts), len(new_ids)
+
+
 _INDEX_HTML = """<!DOCTYPE html>
 <html lang="lt"><head>
 <meta charset="UTF-8">
@@ -239,7 +410,7 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
   <button class="sport-tab" onclick="setSport('krepsinys',this)">🏀 Krepšinis</button>
 </div>
 <div class="stats" id="stats"></div>
-<button class="refresh-btn" onclick="loadData()">🔄 Atnaujinti</button>
+<button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">🔄 Atnaujinti</button>
 <div class="filters" id="filters"></div>
 <div class="grid" id="grid"><div class="loading">⏳ Kraunamos naujienos...</div></div>
 <script>
@@ -366,6 +537,26 @@ async function _checkNew() {
     _lastRecent = newKey;
   } catch {}
 }
+async function manualRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.textContent = '⏳ Tikrinama...'; btn.disabled = true;
+  document.getElementById('meta').textContent = '⏳ Kreipiamasi į svetaines, palaukite...';
+  try {
+    const r = await fetch('/api/refresh', {method:'POST'});
+    const d = await r.json();
+    ALL    = d.articles || [];
+    RECENT = new Set(d.recent_ids || []);
+    const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
+    const msg = d.new_count > 0
+      ? `✅ Atnaujinta: ${now} | Rasta ${d.new_count} naujų | ${ALL.length} iš viso`
+      : `✅ Atnaujinta: ${now} | Naujų nėra | ${ALL.length} straipsnių`;
+    document.getElementById('meta').textContent = msg;
+    renderFilters(); renderCards();
+  } catch(e) {
+    document.getElementById('meta').textContent = '❌ Klaida: ' + e.message;
+  }
+  btn.textContent = '🔄 Atnaujinti'; btn.disabled = false;
+}
 loadData().then(() => { _lastRecent = [...RECENT].sort().join(','); });
 setInterval(_checkNew, 30000);
 </script>
@@ -381,6 +572,14 @@ def articles():
     data   = _kv_get("articles")   or []
     recent = _kv_get("recent_ids") or []
     return jsonify({"articles": data, "recent_ids": recent})
+
+@app.route("/api/refresh", methods=["POST"])
+def refresh():
+    total, new_count = run_scraper()
+    data   = _kv_get("articles")   or []
+    recent = _kv_get("recent_ids") or []
+    return jsonify({"articles": data, "recent_ids": recent,
+                    "total": total, "new_count": new_count})
 
 @app.route("/api/post", methods=["POST", "OPTIONS"])
 def post():
