@@ -243,7 +243,7 @@ def _html_to_text(html):
 
 def _fetch_rss(site):
     try:
-        feed = feedparser.parse(site["rss"], request_headers={"User-Agent": _UA}, timeout=5)
+        feed = feedparser.parse(site["rss"], request_headers={"User-Agent": _UA})
         arts = []
         for e in feed.entries[:_MAX]:
             title = e.get("title","").strip()
