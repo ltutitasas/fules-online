@@ -44,7 +44,12 @@ def html_to_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script","style","nav","footer","header","aside"]):
         tag.decompose()
-    return " ".join(soup.get_text(" ", strip=True).split())
+    parts = []
+    for el in soup.find_all(["p","h2","h3","h4","li"]):
+        txt = " ".join(el.get_text(" ", strip=True).split())
+        if len(txt) > 20:
+            parts.append(txt)
+    return "\n\n".join(parts) if parts else " ".join(soup.get_text(" ", strip=True).split())
 
 # ── Svetainių sąrašas ─────────────────────────────────────────────
 SITES = [

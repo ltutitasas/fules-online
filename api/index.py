@@ -252,7 +252,12 @@ def _html_to_text(html):
     if not html: return ""
     soup = _BS4(html, "html.parser")
     for t in soup(["script","style","nav","footer","header","aside"]): t.decompose()
-    return " ".join(soup.get_text(" ", strip=True).split())
+    parts = []
+    for el in soup.find_all(["p","h2","h3","h4","li"]):
+        txt = " ".join(el.get_text(" ", strip=True).split())
+        if len(txt) > 20:
+            parts.append(txt)
+    return "\n\n".join(parts) if parts else " ".join(soup.get_text(" ", strip=True).split())
 
 def _fetch_rss(site):
     try:
@@ -612,16 +617,23 @@ def article_text():
         for tag in soup(["script","style","nav","footer","header","aside",
                          "iframe","noscript","form","button"]):
             tag.decompose()
-        # Bandome rasti pagrindinį turinį
-        main = (soup.find("article") or soup.find(class_=lambda c: c and
-                any(x in c for x in ["content","article","post","body","text","entry"]))
-                or soup.find("main") or soup.body)
+        # Ieškome turinio konteinerio - nuo konkretesnių iki bendresnių
+        main = (soup.select_one('[class*="post-content"]') or
+                soup.select_one('[class*="article-content"]') or
+                soup.select_one('[class*="entry-content"]') or
+                soup.select_one('[class*="article-body"]') or
+                soup.select_one('article') or
+                soup.select_one('main') or
+                soup.body)
+        paragraphs = []
         if main:
-            paragraphs = [p.get_text(" ", strip=True) for p in main.find_all("p")
-                          if len(p.get_text(strip=True)) > 40]
-            text = "\n\n".join(paragraphs)
-        else:
-            text = ""
+            for el in main.find_all(["p", "h2", "h3", "h4"]):
+                txt = el.get_text(" ", strip=True)
+                # Valome perteklinį tarpą tarp žodžių
+                txt = " ".join(txt.split())
+                if len(txt) > 40:
+                    paragraphs.append(txt)
+        text = "\n\n".join(paragraphs)
         return jsonify({"text": text[:8000]})
     except Exception as e:
         return jsonify({"text": "", "error": str(e)})
