@@ -588,11 +588,16 @@ def articles():
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
-    total, new_count = run_scraper()
-    data   = _kv_get("articles")   or []
-    recent = _kv_get("recent_ids") or []
-    return jsonify({"articles": data, "recent_ids": recent,
-                    "total": total, "new_count": new_count})
+    import traceback
+    try:
+        total, new_count = run_scraper()
+        data   = _kv_get("articles")   or []
+        recent = _kv_get("recent_ids") or []
+        return jsonify({"articles": data, "recent_ids": recent,
+                        "total": total, "new_count": new_count})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e),
+                        "trace": traceback.format_exc()[-1000:]}), 500
 
 @app.route("/api/post", methods=["POST", "OPTIONS"])
 def post():
