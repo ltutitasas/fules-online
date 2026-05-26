@@ -514,36 +514,27 @@ async function loadData() {
   }
 }
 function _doCopy(txt, btn) {
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(txt).then(() => {
-      btn.textContent = '✅ Nukopijuota!'; btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = '📋 Kopijuoti'; btn.classList.remove('copied'); }, 2500);
-    });
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = txt; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); document.body.removeChild(ta);
-    btn.textContent = '✅ Nukopijuota!'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '📋 Kopijuoti'; btn.classList.remove('copied'); }, 2500);
-  }
+  // execCommand visada veikia (veikia ir po await), clipboard API kartais blokuojama
+  const ta = document.createElement('textarea');
+  ta.value = txt;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  btn.textContent = '✅ Nukopijuota!'; btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '📋 Kopijuoti'; btn.classList.remove('copied'); }, 2500);
 }
 async function copyArt(id, btn) {
   const art = ALL.find(a => a.id === id);
   if (!art) return;
-  if (art.text) {
-    _doCopy(art.title + '\\n\\n' + art.text, btn);
-  } else {
-    btn.textContent = '⏳ Kraunama...'; btn.disabled = true;
-    try {
-      const r = await fetch('/api/article-text?url=' + encodeURIComponent(art.url));
-      const d = await r.json();
-      if (d.text) art.text = d.text;
-      _doCopy(art.title + (art.text ? '\\n\\n' + art.text : ''), btn);
-    } catch(e) {
-      _doCopy(art.title, btn);
-    }
-    btn.disabled = false;
-  }
+  btn.textContent = '⏳ Kraunama...'; btn.disabled = true;
+  try {
+    const r = await fetch('/api/article-text?url=' + encodeURIComponent(art.url));
+    const d = await r.json();
+    if (d.text) art.text = d.text;
+  } catch(e) { /* naudosim tai, ką turim */ }
+  _doCopy(art.title + (art.text ? '\\n\\n' + art.text : ''), btn);
+  btn.disabled = false;
 }
 async function postArt(id, btn) {
   btn.textContent = '⏳ Įdedama...'; btn.disabled = true;
