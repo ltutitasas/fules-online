@@ -508,10 +508,7 @@ async function loadData() {
     document.getElementById('meta').textContent = '❌ Klaida: ' + e.message;
   }
 }
-function copyArt(id, btn) {
-  const art = ALL.find(a => a.id === id);
-  if (!art) return;
-  const txt = art.title + (art.text ? '\\n\\n' + art.text : '');
+function _doCopy(txt, btn) {
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(txt).then(() => {
       btn.textContent = '✅ Nukopijuota!'; btn.classList.add('copied');
@@ -523,6 +520,24 @@ function copyArt(id, btn) {
     document.execCommand('copy'); document.body.removeChild(ta);
     btn.textContent = '✅ Nukopijuota!'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = '📋 Kopijuoti'; btn.classList.remove('copied'); }, 2500);
+  }
+}
+async function copyArt(id, btn) {
+  const art = ALL.find(a => a.id === id);
+  if (!art) return;
+  if (art.text) {
+    _doCopy(art.title + '\\n\\n' + art.text, btn);
+  } else {
+    btn.textContent = '⏳ Kraunama...'; btn.disabled = true;
+    try {
+      const r = await fetch('/api/article-text?url=' + encodeURIComponent(art.url));
+      const d = await r.json();
+      if (d.text) art.text = d.text;
+      _doCopy(art.title + (art.text ? '\\n\\n' + art.text : ''), btn);
+    } catch(e) {
+      _doCopy(art.title, btn);
+    }
+    btn.disabled = false;
   }
 }
 async function postArt(id, btn) {
@@ -585,6 +600,31 @@ def articles():
     data   = _kv_get("articles")   or []
     recent = _kv_get("recent_ids") or []
     return jsonify({"articles": data, "recent_ids": recent})
+
+@app.route("/api/article-text", methods=["GET"])
+def article_text():
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"text": ""}), 400
+    try:
+        r = _req.get(url, headers={"User-Agent": _UA}, timeout=8)
+        soup = _BS4(r.text, "html.parser")
+        for tag in soup(["script","style","nav","footer","header","aside",
+                         "iframe","noscript","form","button"]):
+            tag.decompose()
+        # Bandome rasti pagrindinį turinį
+        main = (soup.find("article") or soup.find(class_=lambda c: c and
+                any(x in c for x in ["content","article","post","body","text","entry"]))
+                or soup.find("main") or soup.body)
+        if main:
+            paragraphs = [p.get_text(" ", strip=True) for p in main.find_all("p")
+                          if len(p.get_text(strip=True)) > 40]
+            text = "\n\n".join(paragraphs)
+        else:
+            text = ""
+        return jsonify({"text": text[:8000]})
+    except Exception as e:
+        return jsonify({"text": "", "error": str(e)})
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
