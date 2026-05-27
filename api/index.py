@@ -663,7 +663,7 @@ def article_text():
                 if len(txt) > 40:
                     paragraphs.append(txt)
         text = "\n\n".join(paragraphs)
-        return jsonify({"text": text[:8000]})
+        return jsonify({"text": text[:30000]})
     except Exception as e:
         return jsonify({"text": "", "error": str(e)})
 
