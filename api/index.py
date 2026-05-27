@@ -666,6 +666,14 @@ def refresh():
         return jsonify({"ok": False, "error": str(e),
                         "trace": traceback.format_exc()[-1000:]}), 500
 
+@app.route("/api/cron", methods=["GET", "POST"])
+def cron():
+    try:
+        total, new_count = run_scraper()
+        return jsonify({"ok": True, "total": total, "new": new_count})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/post", methods=["POST", "OPTIONS"])
 def post():
     if request.method == "OPTIONS":
