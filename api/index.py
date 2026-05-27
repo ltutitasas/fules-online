@@ -620,6 +620,19 @@ async function manualRefresh() {
 }
 loadData().then(() => { _lastRecent = [...RECENT].sort().join(','); });
 setInterval(_checkNew, 30000);
+// Automatinis scrape kas 15 min kol puslapis atidarytas
+setInterval(async function() {
+  try {
+    const r = await fetch('/api/refresh', {method:'POST'});
+    const d = await r.json();
+    if (d.articles && d.articles.length) {
+      ALL = d.articles; RECENT = new Set(d.recent_ids || []);
+      const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
+      document.getElementById('meta').textContent = 'Atnaujinta: ' + now + ' | ' + ALL.length + ' straipsnių';
+      renderFilters(); renderCards();
+    }
+  } catch(e) {}
+}, 15 * 60 * 1000);
 </script>
 </body></html>"""
 
