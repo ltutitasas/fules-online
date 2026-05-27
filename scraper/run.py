@@ -86,6 +86,10 @@ SITES = [
     {"name":"Lietuva Basketball","sport":"krepšinis", "rss":"https://lietuva.basketball/feed/"},
     {"name":"BC Rytas",          "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
     # 🏀 KREPŠINIS – HTTP
+    {"name":"LKL", "sport":"krepšinis", "method":"http",
+     "url":"https://lkl.lt/straipsniai",
+     "link_pattern_re": r"/straipsniai/\d+/",
+     "base_url":"https://lkl.lt"},
     {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=zalgiris",
      "selectors":{"articles":"article",
@@ -145,18 +149,26 @@ def fetch_http(site: dict) -> list:
         base = site.get("base_url","")
         articles = []
 
-        if "link_pattern" in site or "link_patterns" in site:
-            patterns = site.get("link_patterns") or [site.get("link_pattern","")]
+        if "link_pattern" in site or "link_patterns" in site or "link_pattern_re" in site:
+            import re as _re
+            pat_re = _re.compile(site["link_pattern_re"]) if "link_pattern_re" in site else None
+            patterns = site.get("link_patterns") or ([site.get("link_pattern","")] if "link_pattern" in site else [])
             seen = set()
             for a in soup.find_all("a", href=True):
                 href = a["href"]
-                if not any(p in href for p in patterns): continue
+                if pat_re:
+                    if not pat_re.search(href): continue
+                elif not any(p in href for p in patterns): continue
                 if "#" in href: continue
                 url = href if href.startswith("http") else base + href
                 title = a.get_text(strip=True)
                 if not title or len(title) < 5:
                     h = a.find(["h2","h3","h4"])
                     if h: title = h.get_text(strip=True)
+                if not title or len(title) < 5:
+                    img_in_a = a.find("img")
+                    if img_in_a and img_in_a.get("alt"):
+                        title = img_in_a["alt"].strip()
                 if not title or len(title) < 5: continue
                 if url in seen: continue
                 seen.add(url)
