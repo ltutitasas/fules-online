@@ -465,7 +465,10 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
   <button class="sport-tab" onclick="setSport('krepsinys',this)">🏀 Krepšinis</button>
 </div>
 <div class="stats" id="stats"></div>
-<button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">🔄 Atnaujinti</button>
+<div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px">
+  <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()" style="margin:0">🔄 Atnaujinti</button>
+  <button class="refresh-btn" id="notifBtn" onclick="askNotif()" style="margin:0">🔔 Pranešimai</button>
+</div>
 <div class="filters" id="filters"></div>
 <div class="grid" id="grid"><div class="loading">⏳ Kraunamos naujienos...</div></div>
 <script>
@@ -618,7 +621,27 @@ async function manualRefresh() {
   }
   btn.textContent = '🔄 Atnaujinti'; btn.disabled = false;
 }
-loadData().then(() => { _lastRecent = [...RECENT].sort().join(','); });
+async function askNotif() {
+  const btn = document.getElementById('notifBtn');
+  if (!('Notification' in window)) { btn.textContent = '❌ Nepalaikoma'; return; }
+  if (Notification.permission === 'granted') { btn.textContent = '✅ Įjungta'; return; }
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    btn.textContent = '✅ Įjungta';
+    new Notification('🏆 Sporto naujienos', {body: 'Pranešimai įjungti! Gausite žinutę kai atsiras naujienų.'});
+  } else {
+    btn.textContent = '🚫 Užblokuota';
+  }
+}
+function _updateNotifBtn() {
+  const btn = document.getElementById('notifBtn');
+  if (!btn) return;
+  if (!('Notification' in window)) { btn.textContent = '🔔 Nepalaikoma'; btn.disabled = true; return; }
+  if (Notification.permission === 'granted') btn.textContent = '✅ Pranešimai';
+  else if (Notification.permission === 'denied') { btn.textContent = '🚫 Užblokuota'; btn.disabled = true; }
+  else btn.textContent = '🔔 Pranešimai';
+}
+loadData().then(() => { _lastRecent = [...RECENT].sort().join(','); _updateNotifBtn(); });
 setInterval(_checkNew, 30000);
 // Automatinis scrape kas 15 min kol puslapis atidarytas
 setInterval(async function() {
