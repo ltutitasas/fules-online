@@ -592,8 +592,10 @@ async function _checkNew() {
     const r = await fetch('/api/articles');
     const d = await r.json();
     const newKey = (d.recent_ids||[]).sort().join(',');
+    const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
     if (newKey !== _lastRecent && _lastRecent !== '') {
       ALL = d.articles || []; RECENT = new Set(d.recent_ids || []);
+      document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
       if (Notification.permission === 'granted' && d.recent_ids?.length)
         new Notification('🏆 Nauja naujiena!', {body: `Rasta ${d.recent_ids.length} nauja(-ų)`});
