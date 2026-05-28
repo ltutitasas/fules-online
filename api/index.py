@@ -681,11 +681,10 @@ def article_text():
                 soup.body)
         paragraphs = []
         if main:
-            for el in main.find_all(["p", "h2", "h3", "h4"]):
+            for el in main.find_all(["p", "h2", "h3", "h4", "li"]):
                 txt = el.get_text(" ", strip=True)
-                # Valome perteklinį tarpą tarp žodžių
                 txt = " ".join(txt.split())
-                if len(txt) > 40:
+                if len(txt) > 4:
                     paragraphs.append(txt)
         text = "\n\n".join(paragraphs)
         return jsonify({"text": text[:30000]})
