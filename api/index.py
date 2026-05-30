@@ -306,7 +306,7 @@ def _fetch_http(site):
                     if not pat_re.search(href): continue
                 elif not any(p in href for p in patterns): continue
                 if "#" in href: continue
-                url = href if href.startswith("http") else base + href
+                url = href if href.startswith("http") else base + (href if href.startswith("/") else "/" + href)
                 title = a.get_text(strip=True)
                 if not title or len(title) < 5:
                     h = a.find(["h2","h3","h4"])
@@ -333,7 +333,7 @@ def _fetch_http(site):
                 title = t_el.get_text(strip=True) if t_el else ""
                 l_el  = container.select_one(sel["link"])
                 href  = l_el.get("href","") if l_el else ""
-                url   = href if href.startswith("http") else (base+href if href else "")
+                url   = href if href.startswith("http") else (base + (href if href.startswith("/") else "/" + href) if href else "")
                 i_el  = container.select_one(sel.get("image","img"))
                 image = None
                 if i_el:
