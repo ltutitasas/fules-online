@@ -93,6 +93,22 @@ def _session():
     sess.headers.update({"User-Agent": _UA})
     if not SPORTAS_USER:
         return sess
+
+    # Bandome atkurti išsaugotas cookies
+    cached = _kv_get("sportas_cookies")
+    if cached:
+        for k, v in cached.items():
+            sess.cookies.set(k, v, domain="www.sportas.lt")
+        # Patikriname ar sesija dar galioja
+        try:
+            test = sess.get(f"{_BASE}/editArticle/",
+                            allow_redirects=False, timeout=8)
+            if test.status_code == 200:
+                return sess  # Sesija galioja
+        except:
+            pass
+
+    # Naujas login
     login_page = sess.get("https://www.sportas.lt/Admin/login",
                           allow_redirects=True, timeout=15)
     soup = BeautifulSoup(login_page.text, "html.parser")
@@ -104,7 +120,7 @@ def _session():
             form_data[name] = value
     sess.post("https://www.sportas.lt/Admin/login",
               data=form_data, allow_redirects=True, timeout=15)
-    _kv_set("sportas_cookies", dict(sess.cookies))
+    _kv_set("sportas_cookies", dict(sess.cookies), ex=86400)
     return sess
 
 def _sources(sess):
@@ -144,7 +160,7 @@ def _do_post(article):
     data = [
         ("id",""),("returnId","-1"),("smartyNow",str(int(time.time()))),
         ("titleSlug",""),("title",title),("extraTitle",""),("facebookTitle",""),
-        ("generatedTV3Title",""),("intro",""),("Pastabos",""),("text",html_body),
+        ("generatedTV3Title",""),("intro",""),("text",html_body),
         ("leadPhoto[path]",""),("leadPhoto[title]",""),("leadPhoto[size]","l"),
         ("cropSize","l"),("leadLiveVideoTime[endDate]",""),("leadLiveVideoTime[endTime]",""),
         ("leadPlayVideo[code]",""),("leadPlayVideo[playId]",""),("leadVideo[url]",""),
@@ -161,7 +177,7 @@ def _do_post(article):
     data += [
         ("n18","0"),("sensitive","0"),("top10","0"),("useSpecNews","0"),
         ("orderedArticle","0"),("leftBlocks","0"),("cacheKey",""),
-        ("status","0"),("exportArticle","1"),
+        ("status","0"),("status","1"),("exportArticle","1"),
         ("publish[StartDate]", now.strftime("%Y-%m-%d")),
         ("publish[StartTime]", now.strftime("%H:%M")),
         ("publish[EndDate]","2030-01-01"),("publish[EndTime]","00:00"),
@@ -173,7 +189,9 @@ def _do_post(article):
     from bs4 import BeautifulSoup as _BS
     edit_r = sess.get(f"{_BASE}/editArticle/", allow_redirects=True, timeout=15)
     if edit_r.url and "login" in edit_r.url.lower():
-        return False, f"Login nepavyko (cookies: {list(sess.cookies.keys())})"
+        return False, f"Login nepavyko | cookies: {list(sess.cookies.keys())} | redirect: {edit_r.url}"
+    if edit_r.status_code != 200:
+        return False, f"editArticle grąžino {edit_r.status_code} | url: {edit_r.url}"
     edit_soup = _BS(edit_r.text, "html.parser")
     for inp in edit_soup.find_all("input", {"type": "hidden"}):
         name = inp.get("name", "")
