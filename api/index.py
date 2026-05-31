@@ -676,6 +676,7 @@ def article_text():
                 soup.select_one('[class*="entry-content"]') or
                 soup.select_one('[class*="article-body"]') or
                 soup.select_one('[class*="prose"]') or
+                soup.select_one('.fck') or
                 soup.select_one('article') or
                 soup.select_one('main') or
                 soup.body)
