@@ -13,7 +13,7 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPORTAS_USER  = os.environ.get("SPORTAS_USER", "")
 SPORTAS_PASS  = os.environ.get("SPORTAS_PASS", "")
 
-_SPORT_CATS = {"krepšinis": [6, 22], "futbolas": [7, 103]}
+_SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7]}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
 _UA   = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -142,6 +142,30 @@ def _do_post(article):
     title    = article.get("title", "")
     text     = article.get("text", "")
     site     = article.get("site", "")
+
+    # Jei tekstas tuščias – bandome gauti iš straipsnio URL
+    if not text and article.get("url"):
+        try:
+            r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
+            from bs4 import BeautifulSoup as _BSt
+            soup = _BSt(r.text, "html.parser")
+            for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
+                tag.decompose()
+            main = (soup.select_one('[class*="post-content"]') or
+                    soup.select_one('[class*="article-content"]') or
+                    soup.select_one('[class*="entry-content"]') or
+                    soup.select_one('[class*="article-body"]') or
+                    soup.select_one('[class*="prose"]') or
+                    soup.select_one('.fck') or
+                    soup.select_one('article') or
+                    soup.select_one('main'))
+            if main:
+                paras = [" ".join(el.get_text(" ", strip=True).split())
+                         for el in main.find_all(["p","h2","h3","h4"])
+                         if len(el.get_text(strip=True)) > 4]
+                text = "\n\n".join(paras[:60])
+        except:
+            pass
 
     enriched  = _ai_enrich(title, text)
     ai_tags   = enriched.get("tags", "")
