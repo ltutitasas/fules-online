@@ -179,7 +179,7 @@ def _do_post(article):
     _kv_set("sportas_sources", {})
     sources   = _sources(sess)
     source_id = _match_source(sources, site)
-    now       = datetime.now()
+    now       = datetime.now(timezone(timedelta(hours=3)))  # Lietuvos laikas (UTC+3)
 
     # Visi kategorijų ID iš formos (reikia siųsti priority[] visiems)
     _ALL_CAT_IDS = [
