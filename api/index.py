@@ -175,9 +175,22 @@ def _do_post(article):
     tags_list = [t.strip() for t in ai_tags.split(",") if t.strip()] if ai_tags else []
 
     sess      = _session()
+    # Visada iš naujo gauname source sąrašą (ne iš cache)
+    _kv_set("sportas_sources", {})
     sources   = _sources(sess)
     source_id = _match_source(sources, site)
     now       = datetime.now()
+
+    # Visi kategorijų ID iš formos (reikia siųsti priority[] visiems)
+    _ALL_CAT_IDS = [
+        6,167,194,137,20,29,22,47,50,155,49,111,121,122,123,124,
+        168,169,172,173,190,191,195,196,198,199,7,175,179,181,182,
+        183,184,185,189,192,193,197,32,51,165,103,188,52,53,55,54,
+        56,57,176,161,8,23,24,25,26,102,9,34,180,97,35,10,98,99,
+        100,101,15,16,18,19,108,91,92,93,94,95,96,156,72,88,76,75,
+        77,153,90,89,11,39,40,106,109,134,131,132,170,171,158,159
+    ]
+    main_cat = str(cat_ids[0]) if cat_ids else "6"
 
     data = [
         ("id",""),("returnId","-1"),("smartyNow",str(int(time.time()))),
@@ -187,10 +200,11 @@ def _do_post(article):
         ("cropSize","l"),("leadLiveVideoTime[endDate]",""),("leadLiveVideoTime[endTime]",""),
         ("leadPlayVideo[code]",""),("leadPlayVideo[playId]",""),("leadVideo[url]",""),
         ("attachCustomJs[]",""),("attachFbPost[]",""),
-        ("mainCategory", str(cat_ids[0]) if cat_ids else "20"),
+        ("mainCategory", main_cat),
     ]
     for cid in cat_ids: data.append(("categories[]", str(cid)))
-    for cid in cat_ids: data.append((f"priority[{cid}]", "1000"))
+    # Siunčiame priority[] visiems kategorijų ID (kaip realus naršyklė)
+    for cid in _ALL_CAT_IDS: data.append((f"priority[{cid}]", "1000"))
     data += [
         ("source",str(source_id)),("realSource","0"),("realSource","0"),
         ("disableComments","0"),("commentsForUsers","0"),("isLiveNews","0"),("tags",""),
@@ -236,9 +250,24 @@ def _do_post(article):
         if "login" in location.lower() or "check" in location.lower():
             return False, f"Login nepavyko – redirect į: {location}"
         _kv_set("sportas_cookies", dict(sess.cookies))
-        return True, f"OK | redirect: {location}"
+        # Sekame redirect ir tikriname ar nėra klaidos pranešimo
+        try:
+            follow = sess.get(
+                location if location.startswith("http") else "https://www.sportas.lt" + location,
+                allow_redirects=True, timeout=10)
+            from bs4 import BeautifulSoup as _BSf
+            fsoup = _BSf(follow.text, "html.parser")
+            # Ieškome klaidos arba sėkmės pranešimo
+            alert = fsoup.select_one(".alert, .error, .success, .flash, [class*='message']")
+            msg = alert.get_text(strip=True)[:200] if alert else ""
+            # Tikriname ar atsirado naujas straipsnis (articleList rodo naujausius)
+            first_row = fsoup.select_one("table tr:nth-child(2) td, .list-item:first-child")
+            first_title = first_row.get_text(strip=True)[:80] if first_row else ""
+            return True, f"redirect:{location} | source:{source_id} | msg:{msg} | first:{first_title}"
+        except Exception as ex:
+            return True, f"redirect:{location} | source:{source_id} | follow_err:{ex}"
     body = r.text[:500].replace("\n", " ").replace("\r", "")
-    return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | location={location} | body={body[:200]}"
+    return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | location={location} | source:{source_id} | body:{body[:200]}"
 
 
 # ── Inline scraperis (naudojamas /api/refresh) ─────────────────────
