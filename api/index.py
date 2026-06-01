@@ -109,16 +109,14 @@ def _session():
             pass
 
     # Naujas login
-    login_page = sess.get("https://www.sportas.lt/Admin/login",
-                          allow_redirects=True, timeout=15)
-    soup = BeautifulSoup(login_page.text, "html.parser")
-    form_data = {"Loginas": SPORTAS_USER, "Password": SPORTAS_PASS}
-    for inp in soup.find_all("input", {"type": "hidden"}):
-        name = inp.get("name", "")
-        value = inp.get("value", "")
-        if name:
-            form_data[name] = value
-    sess.post("https://www.sportas.lt/Admin/login",
+    form_data = {
+        "Username": SPORTAS_USER,
+        "Password": SPORTAS_PASS,
+        "return": "",
+        "closeWindow": "",
+        "referer": "/Admin/login",
+    }
+    sess.post("https://www.sportas.lt/Admin/check/",
               data=form_data, allow_redirects=True, timeout=15)
     _kv_set("sportas_cookies", dict(sess.cookies), ex=86400)
     return sess
