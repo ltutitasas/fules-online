@@ -174,12 +174,30 @@ def _do_post(article):
     html_body = "".join(f"<p>{p}</p>" for p in paras)
     tags_list = [t.strip() for t in ai_tags.split(",") if t.strip()] if ai_tags else []
 
+    if not SPORTAS_USER:
+        return False, "SPORTAS_USER env var nenustatytas"
+
     sess      = _session()
     # Visada iš naujo gauname source sąrašą (ne iš cache)
     _kv_set("sportas_sources", {})
     sources   = _sources(sess)
     source_id = _match_source(sources, site)
-    now       = datetime.now(timezone(timedelta(hours=3)))  # Lietuvos laikas (UTC+3)
+
+    # Gauname edit puslapį pirma – jo formoje yra lietuviškas laikas
+    from bs4 import BeautifulSoup as _BS
+    edit_r = sess.get(f"{_BASE}/editArticle/", allow_redirects=True, timeout=15)
+    if edit_r.url and "login" in edit_r.url.lower():
+        return False, f"Login nepavyko | cookies: {list(sess.cookies.keys())} | redirect: {edit_r.url}"
+    if edit_r.status_code != 200:
+        return False, f"editArticle grąžino {edit_r.status_code} | url: {edit_r.url}"
+    edit_soup = _BS(edit_r.text, "html.parser")
+
+    # Ištraukiame lietuvišką datą/laiką iš sportas.lt serverio formos (jis rodo LT laiką)
+    now = datetime.now(timezone(timedelta(hours=3)))  # fallback UTC+3
+    start_date_el = edit_soup.find("input", {"id": "publishStartDate"})
+    start_time_el = edit_soup.find("input", {"id": "publishStartTime"})
+    pub_date = start_date_el.get("value", now.strftime("%Y-%m-%d")) if start_date_el else now.strftime("%Y-%m-%d")
+    pub_time = start_time_el.get("value", now.strftime("%H:%M")) if start_time_el else now.strftime("%H:%M")
 
     # Visi kategorijų ID iš formos (reikia siųsti priority[] visiems)
     _ALL_CAT_IDS = [
@@ -214,21 +232,12 @@ def _do_post(article):
         ("n18","0"),("sensitive","0"),("top10","0"),("useSpecNews","0"),
         ("orderedArticle","0"),("leftBlocks","0"),("cacheKey",""),
         ("status","0"),("status","1"),("exportArticle","1"),
-        ("publish[StartDate]", now.strftime("%Y-%m-%d")),
-        ("publish[StartTime]", now.strftime("%H:%M")),
+        ("publish[StartDate]", pub_date),
+        ("publish[StartTime]", pub_time),
         ("publish[EndDate]","2030-01-01"),("publish[EndTime]","00:00"),
         ("titlePage","0"),("titlePagePriority","1000"),
     ]
 
-    if not SPORTAS_USER:
-        return False, "SPORTAS_USER env var nenustatytas"
-    from bs4 import BeautifulSoup as _BS
-    edit_r = sess.get(f"{_BASE}/editArticle/", allow_redirects=True, timeout=15)
-    if edit_r.url and "login" in edit_r.url.lower():
-        return False, f"Login nepavyko | cookies: {list(sess.cookies.keys())} | redirect: {edit_r.url}"
-    if edit_r.status_code != 200:
-        return False, f"editArticle grąžino {edit_r.status_code} | url: {edit_r.url}"
-    edit_soup = _BS(edit_r.text, "html.parser")
     for inp in edit_soup.find_all("input", {"type": "hidden"}):
         name = inp.get("name", "")
         value = inp.get("value", "")
