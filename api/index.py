@@ -207,11 +207,14 @@ def _do_post(article):
                   allow_redirects=False, timeout=30,
                   headers={"Referer": f"{_BASE}/editArticle/",
                            "Origin": "https://www.sportas.lt"})
+    location = r.headers.get("Location", "")
     if r.status_code == 302:
+        if "login" in location.lower() or "check" in location.lower():
+            return False, f"Login nepavyko – redirect į: {location}"
         _kv_set("sportas_cookies", dict(sess.cookies))
-        return True, "OK"
-    body = r.text[:300].replace("\n", " ").replace("\r", "")
-    return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | body={body}"
+        return True, f"OK | redirect: {location}"
+    body = r.text[:500].replace("\n", " ").replace("\r", "")
+    return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | location={location} | body={body[:200]}"
 
 
 # ── Inline scraperis (naudojamas /api/refresh) ─────────────────────
@@ -598,8 +601,9 @@ async function postArt(id, btn) {
     const r = await fetch('/api/post', {method:'POST',
       headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
     const d = await r.json();
-    if (d.ok) { btn.textContent = '✅ Įdėta!'; btn.classList.add('posted'); }
-    else { btn.textContent = '❌ ' + (d.error || d.message || 'Klaida'); btn.disabled = false; }
+    if (d.ok) { btn.textContent = '✅ Įdėta! ' + (d.message||''); btn.classList.add('posted'); }
+    else { btn.textContent = '❌ ' + (d.error || d.message || 'Klaida'); btn.disabled = false;
+           console.error('Post error:', d); }
   } catch(e) { btn.textContent = '❌ Klaida'; btn.disabled = false; }
 }
 let _lastRecent = '';
