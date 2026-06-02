@@ -136,7 +136,7 @@ def _sources(sess):
     _kv_set("sportas_sources", result)
     return result
 
-def _do_post(article):
+def _do_post(article, photo_path="", photo_title=""):
     sport    = article.get("sport", "")
     cat_ids  = _SPORT_CATS.get(sport, [])
     title    = article.get("title", "")
@@ -224,7 +224,7 @@ def _do_post(article):
         ("id",""),("returnId","-1"),("smartyNow",str(int(time.time()))),
         ("titleSlug",""),("title",title),("extraTitle",""),("facebookTitle",""),
         ("generatedTV3Title",""),("intro",""),("text",html_body),
-        ("leadPhoto[path]",""),("leadPhoto[title]",""),("leadPhoto[size]","l"),
+        ("leadPhoto[path]", photo_path),("leadPhoto[title]", photo_title),("leadPhoto[size]","l"),
         ("cropSize","l"),("leadLiveVideoTime[endDate]",""),("leadLiveVideoTime[endTime]",""),
         ("leadPlayVideo[code]",""),("leadPlayVideo[playId]",""),("leadVideo[url]",""),
         ("attachCustomJs[]",""),("attachFbPost[]",""),
@@ -556,6 +556,21 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 .loading{text-align:center;padding:60px;color:#64748b;font-size:1.1em}
 .refresh-btn{display:block;margin:0 auto 20px;padding:8px 20px;background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:8px;cursor:pointer;font-size:.85em}
 .refresh-btn:hover{border-color:#64748b;color:#e2e8f0}
+.photo-modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:1000;padding:16px;overflow-y:auto}
+.photo-modal.open{display:flex;align-items:flex-start;justify-content:center}
+.photo-box{background:#1e293b;border-radius:12px;width:100%;max-width:920px;padding:20px;margin-top:20px}
+.photo-box h2{color:#e2e8f0;margin-bottom:14px;font-size:1.1em}
+.photo-search{display:flex;gap:8px;margin-bottom:14px}
+.photo-search input{flex:1;padding:8px 12px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;font-size:.9em}
+.photo-search button{padding:8px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.9em}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;max-height:420px;overflow-y:auto;margin-bottom:12px}
+.photo-item{cursor:pointer;border:2px solid #334155;border-radius:6px;overflow:hidden;transition:.15s;background:#0f172a}
+.photo-item:hover{border-color:#3b82f6;transform:scale(1.03)}
+.photo-item img{width:100%;height:90px;object-fit:cover;display:block}
+.photo-item span{display:block;font-size:.68em;color:#94a3b8;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.photo-skip{width:100%;padding:8px;background:#334155;color:#94a3b8;border:none;border-radius:6px;cursor:pointer;font-size:.85em}
+.photo-skip:hover{background:#475569;color:#e2e8f0}
+.photo-status{text-align:center;padding:40px;color:#64748b}
 </style>
 </head><body>
 <h1>🏆 Sporto naujienos</h1>
@@ -572,6 +587,22 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 </div>
 <div class="filters" id="filters"></div>
 <div class="grid" id="grid"><div class="loading">⏳ Kraunamos naujienos...</div></div>
+
+<div class="photo-modal" id="photoModal" onclick="if(event.target===this)closePhotoModal()">
+  <div class="photo-box">
+    <h2>🖼️ Pasirinkite vedančiąją nuotrauką</h2>
+    <div class="photo-search">
+      <input type="text" id="photoSearchInput" placeholder="Paieška sportas.lt galerijoje..."
+             onkeydown="if(event.key==='Enter')searchPhotos()">
+      <button onclick="searchPhotos()">🔍 Ieškoti</button>
+    </div>
+    <div class="photo-grid" id="photoGrid">
+      <div class="photo-status">Įveskite paieškos frazę ir spauskite 🔍</div>
+    </div>
+    <button class="photo-skip" onclick="selectPhoto('','')">⏭️ Įdėti be nuotraukos</button>
+  </div>
+</div>
+
 <script>
 let ALL = [], RECENT = new Set(), curSport = 'all', curSite = 'all';
 function fmtDate(d) {
@@ -677,11 +708,53 @@ async function copyArt(id, btn) {
   _doCopy(art.title + (art.text ? '\\n\\n' + art.text : ''), btn);
   btn.disabled = false;
 }
+let _pendingPost = null;
 async function postArt(id, btn) {
+  _pendingPost = {id, btn};
+  const art = ALL.find(a => a.id === id);
+  const words = art ? art.title.replace(/[^\\w\\sšžčęėįųūŠŽČĘĖĮŲŪ]/g,'').split(/\\s+/).slice(0,3).join(' ') : '';
+  document.getElementById('photoSearchInput').value = words;
+  document.getElementById('photoGrid').innerHTML = '<div class="photo-status">⏳ Ieškoma...</div>';
+  document.getElementById('photoModal').classList.add('open');
+  if (words) await searchPhotos();
+}
+function closePhotoModal() {
+  document.getElementById('photoModal').classList.remove('open');
+  if (_pendingPost) { _pendingPost.btn.disabled = false; _pendingPost = null; }
+}
+async function searchPhotos() {
+  const q = document.getElementById('photoSearchInput').value.trim();
+  const grid = document.getElementById('photoGrid');
+  if (!q) { grid.innerHTML = '<div class="photo-status">Įveskite paieškos frazę</div>'; return; }
+  grid.innerHTML = '<div class="photo-status">⏳ Ieškoma...</div>';
+  try {
+    const r = await fetch('/api/photos?q=' + encodeURIComponent(q));
+    const d = await r.json();
+    if (!d.photos || !d.photos.length) {
+      grid.innerHTML = '<div class="photo-status">Nuotraukų nerasta – pabandykite kitą frazę</div>';
+      return;
+    }
+    grid.innerHTML = d.photos.map(p => {
+      const thumb = p.thumb.startsWith('http') ? p.thumb : 'https://www.sportas.lt' + p.thumb;
+      const safeT = (p.title||'').replace(/"/g,'&quot;');
+      return '<div class="photo-item" data-path="' + p.path + '" data-title="' + safeT + '" onclick="selectPhoto(this.dataset.path,this.dataset.title)">'
+        + '<img src="' + thumb + '" loading="lazy" onerror="this.style.display=\\'none\\'">'
+        + '<span>' + (p.title || p.path.split('/').pop()) + '</span></div>';
+    }).join('');
+  } catch(e) {
+    grid.innerHTML = '<div class="photo-status">❌ Klaida: ' + e.message + '</div>';
+  }
+}
+async function selectPhoto(path, title) {
+  document.getElementById('photoModal').classList.remove('open');
+  if (!_pendingPost) return;
+  const {id, btn} = _pendingPost;
+  _pendingPost = null;
   btn.textContent = '⏳ Įdedama...'; btn.disabled = true;
   try {
     const r = await fetch('/api/post', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id, photo_path: path, photo_title: title})});
     const d = await r.json();
     if (d.ok) { btn.textContent = '✅ Įdėta! ' + (d.message||''); btn.classList.add('posted'); }
     else { btn.textContent = '❌ ' + (d.error || d.message || 'Klaida'); btn.disabled = false;
@@ -836,14 +909,55 @@ def post():
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
         })
-    payload  = request.get_json() or {}
-    aid      = payload.get("id", "")
+    payload     = request.get_json() or {}
+    aid         = payload.get("id", "")
+    photo_path  = payload.get("photo_path", "")
+    photo_title = payload.get("photo_title", "")
     articles = _kv_get("articles") or []
     article  = next((a for a in articles if a["id"] == aid), None)
     if not article:
         return jsonify({"ok": False, "error": "Nerasta"}), 404
-    ok, msg = _do_post(article)
+    ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title)
     return jsonify({"ok": ok, "message": msg})
+
+@app.route("/api/photos", methods=["GET"])
+def get_photos():
+    """Proxy: sportas.lt galerijos paieška. Grąžina photo sąrašą su path ir thumb."""
+    q = request.args.get("q", "")
+    try:
+        sess = _session()
+        if not SPORTAS_USER:
+            return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
+        r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
+                     params={"search": q} if q else {}, timeout=12)
+        soup = _BS4(r.text, "html.parser")
+        import re as _re
+        photos = []
+        seen = set()
+        # Ieškome elementų su onclick, kuriuose yra /cimg/ kelias
+        for el in soup.find_all(onclick=True):
+            oc = el.get("onclick", "")
+            paths = _re.findall(r"['\"](/cimg/[^'\"]+)['\"]", oc)
+            if not paths: continue
+            path = paths[0]
+            if path in seen or "blank" in path: continue
+            seen.add(path)
+            # Antraštė – pirmasis ne-path string argumente
+            all_strings = _re.findall(r"['\"]([^'\"]{2,150})['\"]", oc)
+            title = next((s for s in all_strings if s != path and "/cimg/" not in s), "")
+            img = el.find("img")
+            thumb = img.get("src", path) if img else path
+            photos.append({"path": path, "thumb": thumb, "title": title})
+        # Fallback: tiesioginiai img su /cimg/
+        if not photos:
+            for img in soup.find_all("img"):
+                src = img.get("src", "")
+                if "/cimg/" in src and "blank" not in src and src not in seen:
+                    seen.add(src)
+                    photos.append({"path": src, "thumb": src, "title": img.get("alt", "")})
+        return jsonify({"photos": photos[:60]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
