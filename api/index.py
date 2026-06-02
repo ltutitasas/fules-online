@@ -1055,11 +1055,7 @@ def upload_photo():
         if not resp.get("success"):
             return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
 
-        # 4. Apskaičiuojame kelią (content-addressed: MD5 hash)
-        h = hashlib.md5(img_r.content).hexdigest()
-        path = f"/Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{h}{ext}"
-
-        # 5. Išsaugome metaduomenis: šaltinis=3 (Organizatorių nuotr.),
+        # 4. Išsaugome metaduomenis: šaltinis=3 (Organizatorių nuotr.),
         #    kategorija pagal sportą, vartotojo gairės
         cat_id = "128" if "krep" in sport.lower() else "129"  # Krepšinis / Futbolas
         save_data = {
@@ -1070,6 +1066,20 @@ def upload_photo():
         }
         sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
                   data=save_data, timeout=10)
+
+        # 5. Randame tikrą kelią – iškart po įkėlimo paimame pirmą galerijos nuotrauką
+        import re as _re
+        gal_r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
+                         timeout=10)
+        path = ""
+        m = _re.search(
+            r'choicePhoto\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]*)"',
+            gal_r.text)
+        if m:
+            path = m.group(1)
+
+        if not path:
+            return jsonify({"ok": False, "error": "Nuotrauka įkelta, bet kelias nerastas galerijoje"}), 400
 
         return jsonify({"ok": True, "path": path})
 
