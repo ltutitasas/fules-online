@@ -1089,35 +1089,20 @@ def upload_photo():
                            "Origin": "https://www.sportas.lt"},
                   timeout=10)
 
-        # 5. Randame kelią pagal žinomą photo_id HTML'e
+        # 5. Randame kelią iš admin listing'o pagal photo_id
         import re as _re
         path = ""
         if photo_id:
-            # Pirma bandome su tags kaip paieška (jei yra)
-            search_q = tags.split(",")[0].strip() if tags else ""
-            gal_r = sess.get(
-                "https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
-                params={"query": search_q} if search_q else {},
-                timeout=10)
-            # Ieškome mūsų nuotraukos pagal ID: id="photo_1546213"
+            lst_r = sess.get("https://www.sportas.lt/Admin/Load/UGallery/editPhoto/",
+                             timeout=10)
             m = _re.search(
-                rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"',
-                gal_r.text, _re.DOTALL)
+                rf'[&?](?:amp;)?f=(/Uploads/UGallery/photos/[^\'"]+)[\'"][^"]*"[^"]*editPhoto/{photo_id}[^0-9]',
+                lst_r.text)
             if m:
                 path = m.group(1)
-            # Jei nerado su search – bandome be paieškos
-            if not path and search_q:
-                gal_r2 = sess.get(
-                    "https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
-                    timeout=10)
-                m2 = _re.search(
-                    rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"',
-                    gal_r2.text, _re.DOTALL)
-                if m2:
-                    path = m2.group(1)
 
         if not path:
-            return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), bet kelias nerastas galerijoje"}), 400
+            return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), bet nerasta listing'e. Ar savePhotos veikia?"}), 400
 
         return jsonify({"ok": True, "path": path, "photo_id": photo_id})
 
@@ -1126,41 +1111,37 @@ def upload_photo():
 
 @app.route("/api/photo-debug/<int:photo_id>", methods=["GET"])
 def photo_debug(photo_id):
-    """Randa photo kelią pagal ID."""
+    """Randa photo kelią pagal ID – žiūri listing'e prieš/po mūsų ID."""
     try:
         sess = _session()
         import re as _re
 
-        r = sess.get(
-            f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}",
-            timeout=10)
-
+        # Listing puslapis – ieškome mūsų photo pagal ID
+        r = sess.get("https://www.sportas.lt/Admin/Load/UGallery/editPhoto/",
+                     timeout=10)
         html = r.text
-        # Visi /Uploads/UGallery/ keliai su kontekstu
-        paths_ctx = []
-        for m in _re.finditer(r'(/Uploads/UGallery/photos/[0-9a-f/]+\.(?:jpg|jpeg|png|gif))', html, _re.I):
-            start = max(0, m.start()-80)
-            end   = min(len(html), m.end()+80)
-            paths_ctx.append({"path": m.group(1), "context": html[start:end]})
 
-        # Visi input laukai su "path" arba "photo" pavadinime
-        inputs = [{"name": m.group(1), "value": m.group(2)}
-                  for m in _re.finditer(
-                      r'<input[^>]+name=["\']([^"\']*(?:path|photo|file|src)[^"\']*)["\'][^>]+value=["\']([^"\']*)["\']',
-                      html, _re.I)]
+        # Pattern: &f={PATH}') href="...editPhoto/{ID}?
+        listing = {}
+        for m in _re.finditer(
+            r'[&?](?:amp;)?f=(/Uploads/UGallery/photos/[^\'"]+)[\'"][^"]*"[^"]*editPhoto/(\d+)',
+            html):
+            listing[int(m.group(2))] = m.group(1)
 
-        # Ieškome savo photo ID
-        our_ctx = ""
-        m2 = _re.search(rf'photo[_\-]?{photo_id}.{{0,300}}', html, _re.DOTALL | _re.I)
-        if m2:
-            our_ctx = m2.group(0)
+        our_path = listing.get(photo_id)
+
+        # Pirmasis ID sąraše
+        first_ids = sorted(listing.keys(), reverse=True)[:5]
+
+        # Taip pat pažiūrime viršutinę dalį (3000–7000 chars) – ten gali būti forma
+        mid_html = html[2000:7000]
 
         return jsonify({
-            "status": r.status_code,
-            "paths_with_context": paths_ctx[:10],
-            "inputs_with_path": inputs[:10],
-            "our_photo_context": our_ctx[:500],
-            "html_1000": html[:1000],
+            "found": our_path is not None,
+            "our_path": our_path,
+            "listing_ids_found": first_ids,
+            "listing_count": len(listing),
+            "mid_html": mid_html,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
