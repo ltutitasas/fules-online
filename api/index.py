@@ -1041,12 +1041,26 @@ def upload_photo():
         filename = raw_name if any(raw_name.lower().endswith(e) for e in [".jpg",".jpeg",".png",".gif",".webp"]) \
                    else (raw_name or "photo") + ext
 
-        # 2. Įkeliame į sportas.lt (Fine Uploader multipart)
-        upload_url = "https://www.sportas.lt/Admin/Load/UGallery/submitPhotos"
-        files = {"qqfile": (filename, img_r.content, ct)}
-        up_r  = sess.post(upload_url, files=files, data={"cfDontBugMe": "please"}, timeout=20)
+        # 2. Įkeliame į sportas.lt kaip raw octet-stream (Fine Uploader stilius)
+        upload_url = (
+            f"https://www.sportas.lt/Admin/Load/UGallery/submitPhotos"
+            f"?cfDontBugMe=please&qqfile={filename}&noCacheCF=1"
+        )
+        up_r = sess.post(
+            upload_url,
+            data=img_r.content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "X-File-Name":  filename,
+                "X-Mime-Type":  ct,
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": "https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
+                "Origin":  "https://www.sportas.lt",
+            },
+            timeout=20,
+        )
 
-        # 3. Parseriname atsakymą
+        # 3. Parseriname atsakymą — tikimasi {"success": true, "id": 1546210}
         try:
             resp = up_r.json()
         except Exception:
@@ -1055,19 +1069,27 @@ def upload_photo():
         if not resp.get("success"):
             return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
 
-        # 4. Išsaugome metaduomenis: šaltinis=3 (Organizatorių nuotr.),
-        #    kategorija pagal sportą, vartotojo gairės
-        cat_id = "128" if "krep" in sport.lower() else "129"  # Krepšinis / Futbolas
-        save_data = {
-            "source":   "3",        # | Organizatorių nuotr.
-            "category": cat_id,
-            "tags":     tags,
-            "action":   "1",        # tik įkelti, be galerijos priskyrimo
-        }
-        sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
-                  data=save_data, timeout=10)
+        photo_id = resp.get("id") or resp.get("photoId") or resp.get("uuid") or ""
 
-        # 5. Randame tikrą kelią – iškart po įkėlimo paimame pirmą galerijos nuotrauką
+        # 4. Išsaugome metaduomenis
+        cat_id = "128" if "krep" in sport.lower() else "129"
+        save_data = {
+            "file":    "",
+            "source":  "3",      # | Organizatorių nuotr.
+            "category": cat_id,
+            "tags":    tags,
+            "action":  "1",
+            "galleryAutocomplete": "",
+        }
+        if photo_id:
+            save_data[f"photoName[{photo_id}]"] = ""
+        sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
+                  data=save_data,
+                  headers={"Referer": "https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
+                           "Origin": "https://www.sportas.lt"},
+                  timeout=10)
+
+        # 5. Randame kelią iš galerijos (naujausia nuotrauka turi būti pirma)
         import re as _re
         gal_r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
                          timeout=10)
@@ -1079,9 +1101,9 @@ def upload_photo():
             path = m.group(1)
 
         if not path:
-            return jsonify({"ok": False, "error": "Nuotrauka įkelta, bet kelias nerastas galerijoje"}), 400
+            return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), bet kelias nerastas galerijoje"}), 400
 
-        return jsonify({"ok": True, "path": path})
+        return jsonify({"ok": True, "path": path, "photo_id": photo_id})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
