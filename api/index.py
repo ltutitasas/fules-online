@@ -953,6 +953,32 @@ def get_photos():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/gallery-debug", methods=["GET"])
+def gallery_debug():
+    """Laikinas: rodo galerijos popup pilną HTML (upload formos paieškai)."""
+    try:
+        sess = _session()
+        r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto", timeout=12)
+        # Grąžiname sutrumpintą HTML, ieškome upload formos
+        html = r.text
+        # Paieška: form action, input type=file, upload, ajax
+        import re as _re
+        forms = _re.findall(r'<form[^>]*action=["\']([^"\']*)["\'][^>]*>', html, _re.I)
+        file_inputs = _re.findall(r'<input[^>]*type=["\']file["\'][^>]*>', html, _re.I)
+        ajax_urls = _re.findall(r'["\']([^"\']*[Uu]pload[^"\']*)["\']', html)
+        ajax_urls2 = _re.findall(r'url\s*:\s*["\']([^"\']+)["\']', html)
+        return jsonify({
+            "status": r.status_code,
+            "html_len": len(html),
+            "html_snippet": html[:3000],
+            "forms": forms,
+            "file_inputs": file_inputs,
+            "ajax_upload_urls": list(set(ajax_urls))[:20],
+            "ajax_urls": list(set(ajax_urls2))[:20],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
     """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""
