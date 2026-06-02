@@ -178,10 +178,20 @@ def _do_post(article):
         return False, "SPORTAS_USER env var nenustatytas"
 
     sess      = _session()
-    # Visada iš naujo gauname source sąrašą (ne iš cache)
-    _kv_set("sportas_sources", {})
-    sources   = _sources(sess)
-    source_id = _match_source(sources, site)
+    # Sportas.lt šaltinio ID: pirma žiūrim rankinį priskyrimą, tada fuzzy match
+    explicit = _SITE_SOURCE_OVERRIDE.get(site, "")
+    if explicit and explicit.isdigit():
+        # Tiesioginis ID
+        source_id = explicit
+        sources   = {}
+    else:
+        _kv_set("sportas_sources", {})
+        sources   = _sources(sess)
+        if explicit:
+            # Tikslus pavadinimas nurodytas – ieškome tik jo
+            source_id = sources.get(explicit, _match_source(sources, site))
+        else:
+            source_id = _match_source(sources, site)
 
     # Gauname edit puslapį pirma – jo formoje yra lietuviškas laikas
     from bs4 import BeautifulSoup as _BS
@@ -285,50 +295,54 @@ _UA  = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 _MAX = 10
 
 _SITES = [
-    {"name":"FK Banga",       "sport":"futbolas",  "rss":"https://www.fkbanga.lt/feed/"},
-    {"name":"FC Džiugas",     "sport":"futbolas",  "rss":"https://www.fcdziugas.lt/feed/"},
-    {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/"},
-    {"name":"FK Panevėžys",   "sport":"futbolas",  "rss":"https://fk-panevezys.lt/feed/"},
-    {"name":"FK Sūduva",      "sport":"futbolas",  "rss":"https://fksuduva.lt/feed/"},
-    {"name":"FK TransINVEST", "sport":"futbolas",  "rss":"https://fktransinvest.lt/feed/"},
-    {"name":"FA Šiauliai",    "sport":"futbolas",  "rss":"https://siauliufa.lt/feed/"},
-    {"name":"FK Žalgiris",    "sport":"futbolas",  "rss":"https://fkzalgiris.lt/feed/"},
-    {"name":"LFF",            "sport":"futbolas",  "rss":"https://www.lff.lt/feed/"},
-    {"name":"BC Neptūnas",    "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/"},
-    {"name":"BC Lietkabelis", "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/"},
-    {"name":"BC Šiauliai",    "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/"},
-    {"name":"Utenos Juventus","sport":"krepšinis", "rss":"https://utenosjuventus.lt/feed/"},
-    {"name":"Lietuva Basketball","sport":"krepšinis","rss":"https://lietuva.basketball/feed/"},
-    {"name":"BC Rytas",       "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
-    {"name":"Top Lyga", "sport":"futbolas", "method":"http",
+    # sportas_source: sportas.lt šaltinio ID arba pavadinimas (tikslus). "" = automatinis matching.
+    {"name":"FK Banga",       "sport":"futbolas",  "sportas_source":"", "rss":"https://www.fkbanga.lt/feed/"},
+    {"name":"FC Džiugas",     "sport":"futbolas",  "sportas_source":"", "rss":"https://www.fcdziugas.lt/feed/"},
+    {"name":"FC Hegelmann",   "sport":"futbolas",  "sportas_source":"", "rss":"https://fchegelmann.com/feed/"},
+    {"name":"FK Panevėžys",   "sport":"futbolas",  "sportas_source":"", "rss":"https://fk-panevezys.lt/feed/"},
+    {"name":"FK Sūduva",      "sport":"futbolas",  "sportas_source":"", "rss":"https://fksuduva.lt/feed/"},
+    {"name":"FK TransINVEST", "sport":"futbolas",  "sportas_source":"", "rss":"https://fktransinvest.lt/feed/"},
+    {"name":"FA Šiauliai",    "sport":"futbolas",  "sportas_source":"", "rss":"https://siauliufa.lt/feed/"},
+    {"name":"FK Žalgiris",    "sport":"futbolas",  "sportas_source":"", "rss":"https://fkzalgiris.lt/feed/"},
+    {"name":"LFF",            "sport":"futbolas",  "sportas_source":"", "rss":"https://www.lff.lt/feed/"},
+    {"name":"BC Neptūnas",    "sport":"krepšinis", "sportas_source":"", "rss":"https://bcneptunas.lt/feed/"},
+    {"name":"BC Lietkabelis", "sport":"krepšinis", "sportas_source":"", "rss":"https://www.kklietkabelis.lt/feed/"},
+    {"name":"BC Šiauliai",    "sport":"krepšinis", "sportas_source":"", "rss":"https://bcsiauliai.lt/feed/"},
+    {"name":"Utenos Juventus","sport":"krepšinis", "sportas_source":"", "rss":"https://utenosjuventus.lt/feed/"},
+    {"name":"Lietuva Basketball","sport":"krepšinis","sportas_source":"","rss":"https://lietuva.basketball/feed/"},
+    {"name":"BC Rytas",       "sport":"krepšinis", "sportas_source":"", "rss":"https://rytasvilnius.lt/feed/"},
+    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"", "method":"http",
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
      "base_url":"https://toplyga.lt"},
-    {"name":"Žalgiris futbolas", "sport":"futbolas", "method":"http",
+    {"name":"Žalgiris futbolas", "sport":"futbolas", "sportas_source":"", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=futbolas",
      "selectors":{"articles":"article","title":"div.font-semibold a",
                   "link":"div.font-semibold a","image":"figure img"},
      "base_url":"https://zalgiris.lt"},
-    {"name":"FK Riteriai", "sport":"futbolas", "method":"http",
+    {"name":"FK Riteriai", "sport":"futbolas", "sportas_source":"", "method":"http",
      "url":"https://www.fkriteriai.lt/naujienos",
      "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
-    {"name":"LKL", "sport":"krepšinis", "method":"http",
+    {"name":"LKL", "sport":"krepšinis", "sportas_source":"", "method":"http",
      "url":"https://lkl.lt/straipsniai",
      "link_pattern_re": r"/straipsniai/\d+/",
      "base_url":"https://lkl.lt"},
-    {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
+    {"name":"Žalgiris", "sport":"krepšinis", "sportas_source":"", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=zalgiris",
      "selectors":{"articles":"article","title":"div.font-semibold a",
                   "link":"div.font-semibold a","image":"figure img"},
      "base_url":"https://zalgiris.lt"},
-    {"name":"KK Nevėžis", "sport":"krepšinis", "method":"http",
+    {"name":"KK Nevėžis", "sport":"krepšinis", "sportas_source":"", "method":"http",
      "url":"https://www.kknevezis.lt/naujienos",
      "link_pattern":"/naujienos/", "base_url":"https://www.kknevezis.lt"},
-    {"name":"BC Jonava", "sport":"krepšinis", "method":"http",
+    {"name":"BC Jonava", "sport":"krepšinis", "sportas_source":"", "method":"http",
      "url":"https://bcjonavahipocredit.lt/naujienos/",
      "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
 ]
+
+# Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
+_SITE_SOURCE_OVERRIDE = {s["name"]: s["sportas_source"] for s in _SITES if s.get("sportas_source")}
 
 def _art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
@@ -817,3 +831,25 @@ def post():
         return jsonify({"ok": False, "error": "Nerasta"}), 404
     ok, msg = _do_post(article)
     return jsonify({"ok": ok, "message": msg})
+
+@app.route("/api/sources", methods=["GET"])
+def get_sources():
+    """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""
+    try:
+        sess = _session()
+        if not SPORTAS_USER:
+            return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
+        sources = _sources(sess)
+        # Surikiuojame pagal pavadinimą
+        sorted_sources = sorted(sources.items(), key=lambda x: x[0].lower())
+        # Parodome ir mūsų svetainių priskyrimus
+        our_sites = [{"name": s["name"], "sport": s["sport"],
+                      "sportas_source": s.get("sportas_source", ""),
+                      "auto_match": _match_source(sources, s["name"]) if sources else "?"}
+                     for s in _SITES]
+        return jsonify({
+            "sportas_sources": [{"name": n, "id": sid} for n, sid in sorted_sources],
+            "our_sites": our_sites,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
