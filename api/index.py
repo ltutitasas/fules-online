@@ -1126,36 +1126,42 @@ def upload_photo():
 
 @app.route("/api/photo-debug/<int:photo_id>", methods=["GET"])
 def photo_debug(photo_id):
-    """Randa photo kelią pagal ID – bando kelis galimus endpoint'us."""
+    """Randa photo kelią pagal ID."""
     try:
         sess = _session()
         import re as _re
-        results = {}
 
-        # 1. editPhoto puslapis
-        for url_tpl in [
+        r = sess.get(
             f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}",
-            f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}/",
-            f"https://www.sportas.lt/Admin/LoadPopup/UGallery/editPhoto/{photo_id}",
-        ]:
-            r = sess.get(url_tpl, timeout=8)
-            paths = _re.findall(r'/Uploads/UGallery/[^\s"\'<>]+', r.text)
-            results[url_tpl] = {"status": r.status_code, "paths": paths[:5], "snippet": r.text[:400]}
+            timeout=10)
 
-        # 2. choicePhoto su photo_id kaip parametru
-        for params in [{"id": photo_id}, {"photoId": photo_id}, {"query": str(photo_id)}]:
-            r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
-                         params=params, timeout=8)
-            m = _re.search(rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"', r.text, _re.DOTALL)
-            results[str(params)] = {"status": r.status_code, "found": bool(m),
-                                    "path": m.group(1) if m else None}
+        html = r.text
+        # Visi /Uploads/UGallery/ keliai su kontekstu
+        paths_ctx = []
+        for m in _re.finditer(r'(/Uploads/UGallery/photos/[0-9a-f/]+\.(?:jpg|jpeg|png|gif))', html, _re.I):
+            start = max(0, m.start()-80)
+            end   = min(len(html), m.end()+80)
+            paths_ctx.append({"path": m.group(1), "context": html[start:end]})
 
-        # 3. addPhotos puslapis – ar rodo naujai įkeltus?
-        r = sess.get("https://www.sportas.lt/Admin/Load/UGallery/addPhotos/", timeout=8)
-        paths = _re.findall(r'/Uploads/UGallery/[^\s"\'<>]+', r.text)
-        results["addPhotos"] = {"status": r.status_code, "paths": paths[:5]}
+        # Visi input laukai su "path" arba "photo" pavadinime
+        inputs = [{"name": m.group(1), "value": m.group(2)}
+                  for m in _re.finditer(
+                      r'<input[^>]+name=["\']([^"\']*(?:path|photo|file|src)[^"\']*)["\'][^>]+value=["\']([^"\']*)["\']',
+                      html, _re.I)]
 
-        return jsonify(results)
+        # Ieškome savo photo ID
+        our_ctx = ""
+        m2 = _re.search(rf'photo[_\-]?{photo_id}.{{0,300}}', html, _re.DOTALL | _re.I)
+        if m2:
+            our_ctx = m2.group(0)
+
+        return jsonify({
+            "status": r.status_code,
+            "paths_with_context": paths_ctx[:10],
+            "inputs_with_path": inputs[:10],
+            "our_photo_context": our_ctx[:500],
+            "html_1000": html[:1000],
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
