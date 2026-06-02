@@ -954,9 +954,16 @@ def get_photos():
             # HTML entities decode (& → &)
             src_url = src_url.replace("&amp;", "&")
             photos.append({"id": photo_id, "path": path, "thumb": src_url, "title": title})
-        # Debug: grąžiname ir papildomą info diagnozei
+        # Debug
         items_found = len(soup.select("div.item"))
-        snippet = r.text[2000:3500] if len(r.text) > 2000 else r.text
+        first_onclick = ""
+        first_style = ""
+        first_item = soup.select_one("div.item")
+        if first_item:
+            a = first_item.find("a")
+            if a:
+                first_onclick = a.get("onclick", "")[:600]
+                first_style = a.get("style", "")[:200]
         return jsonify({
             "photos": photos[:60],
             "debug": {
@@ -964,7 +971,8 @@ def get_photos():
                 "url": r.url,
                 "items_found": items_found,
                 "photos_parsed": len(photos),
-                "html_snippet": snippet,
+                "first_onclick": first_onclick,
+                "first_style": first_style,
             }
         })
     except Exception as e:
