@@ -701,6 +701,7 @@ async function _checkNew() {
       renderFilters(); renderCards();
       if (Notification.permission === 'granted' && d.recent_ids?.length)
         new Notification('🏆 Nauja naujiena!', {body: `Rasta ${d.recent_ids.length} nauja(-ų)`});
+      localStorage.setItem('lastSeenRecent', newKey);
     }
     _lastRecent = newKey;
   } catch {}
@@ -745,8 +746,20 @@ function _updateNotifBtn() {
   else if (Notification.permission === 'denied') { btn.textContent = '🚫 Užblokuota'; btn.disabled = true; }
   else btn.textContent = '🔔 Pranešimai';
 }
-loadData().then(() => { _lastRecent = [...RECENT].sort().join(','); _updateNotifBtn(); });
-setInterval(_checkNew, 30000);
+loadData().then(() => {
+  _lastRecent = [...RECENT].sort().join(',');
+  // Praleistos notifikacijos: lyginame su paskutiniu apsilankymu
+  const stored = localStorage.getItem('lastSeenRecent') || '';
+  if (stored && stored !== _lastRecent && RECENT.size > 0) {
+    const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
+    document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
+    if (Notification.permission === 'granted')
+      new Notification('🏆 Nauja naujiena!', {body: `Rasta ${RECENT.size} nauja(-ų) nuo paskutinio apsilankymo`});
+  }
+  localStorage.setItem('lastSeenRecent', _lastRecent);
+  _updateNotifBtn();
+});
+setInterval(_checkNew, 10000);
 </script>
 </body></html>"""
 
