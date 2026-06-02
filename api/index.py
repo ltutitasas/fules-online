@@ -936,34 +936,34 @@ def get_photos():
         photos = []
         seen = set()
         # HTML struktūra: <div class="item"><a onclick="choicePhoto(id, 'url', 'title')">
+        # Realus formatas: choicePhoto("/Uploads/UGallery/photos/...", "https://static.../thumb.jpg", "Pavadinimas")
         for div in soup.select("div.item"):
             a = div.find("a", onclick=True)
             if not a: continue
             oc = a.get("onclick", "")
-            # Ištraukiame: choicePhoto(1546205, "https://...", "Pavadinimas")
             m = _re.search(
-                r'choicePhoto\(\s*(\d+)\s*,\s*["\']([^"\']+)["\'],\s*["\']([^"\']*)["\']',
+                r'choicePhoto\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]*)"',
                 oc)
             if not m: continue
-            photo_id, src_url, title = m.group(1), m.group(2), m.group(3)
-            if photo_id in seen: continue
-            seen.add(photo_id)
-            # Originalus kelias yra f= parametras URL'e
-            fp = _re.search(r'[?&]f=([^&"\']+)', src_url)
-            path = fp.group(1) if fp else src_url
-            # HTML entities decode (& → &)
-            src_url = src_url.replace("&amp;", "&")
-            photos.append({"id": photo_id, "path": path, "thumb": src_url, "title": title})
+            path, thumb_url, title = m.group(1), m.group(2), m.group(3)
+            if path in seen: continue
+            seen.add(path)
+            photos.append({"path": path, "thumb": thumb_url, "title": title})
         # Debug
         items_found = len(soup.select("div.item"))
+        first_raw_html = ""
         first_onclick = ""
-        first_style = ""
+        first_a_has_onclick = False
         first_item = soup.select_one("div.item")
         if first_item:
+            first_raw_html = str(first_item)[:800]
             a = first_item.find("a")
             if a:
                 first_onclick = a.get("onclick", "")[:600]
-                first_style = a.get("style", "")[:200]
+                first_a_has_onclick = a.has_attr("onclick")
+        # Test regex on first_onclick
+        import re as _re2
+        regex_test = bool(_re2.search(r'choicePhoto\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]*)"', first_onclick)) if first_onclick else False
         return jsonify({
             "photos": photos[:60],
             "debug": {
@@ -972,7 +972,9 @@ def get_photos():
                 "items_found": items_found,
                 "photos_parsed": len(photos),
                 "first_onclick": first_onclick,
-                "first_style": first_style,
+                "first_a_has_onclick": first_a_has_onclick,
+                "regex_test": regex_test,
+                "first_raw_html": first_raw_html,
             }
         })
     except Exception as e:
