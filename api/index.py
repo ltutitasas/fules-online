@@ -231,7 +231,7 @@ def _do_post(article):
     data += [
         ("n18","0"),("sensitive","0"),("top10","0"),("useSpecNews","0"),
         ("orderedArticle","0"),("leftBlocks","0"),("cacheKey",""),
-        ("status","0"),("status","1"),("exportArticle","1"),
+        ("status","0"),("exportArticle","0"),
         ("publish[StartDate]", pub_date),
         ("publish[StartTime]", pub_time),
         ("publish[EndDate]","2030-01-01"),("publish[EndTime]","00:00"),
@@ -333,6 +333,11 @@ _SITES = [
 def _art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
 
+def _strip_wp_footer(text: str) -> str:
+    """Pašalina WordPress RSS artefaktą: 'The post X appeared first on Y.'"""
+    import re as _re
+    return _re.sub(r'\s*The post\s+.+?\s+appeared first on\s+.+?\.?\s*$', '', text, flags=_re.DOTALL | _re.IGNORECASE).strip()
+
 def _html_to_text(html):
     if not html: return ""
     soup = _BS4(html, "html.parser")
@@ -342,7 +347,8 @@ def _html_to_text(html):
         txt = " ".join(el.get_text(" ", strip=True).split())
         if len(txt) > 20:
             parts.append(txt)
-    return "\n\n".join(parts) if parts else " ".join(soup.get_text(" ", strip=True).split())
+    result = "\n\n".join(parts) if parts else " ".join(soup.get_text(" ", strip=True).split())
+    return _strip_wp_footer(result)
 
 def _fetch_rss(site):
     try:
@@ -769,7 +775,7 @@ def article_text():
                 txt = " ".join(txt.split())
                 if len(txt) > 4:
                     paragraphs.append(txt)
-        text = "\n\n".join(paragraphs)
+        text = _strip_wp_footer("\n\n".join(paragraphs))
         return jsonify({"text": text[:30000]})
     except Exception as e:
         return jsonify({"text": "", "error": str(e)})
