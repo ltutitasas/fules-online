@@ -949,34 +949,7 @@ def get_photos():
             if path in seen: continue
             seen.add(path)
             photos.append({"path": path, "thumb": thumb_url, "title": title})
-        # Debug
-        items_found = len(soup.select("div.item"))
-        first_raw_html = ""
-        first_onclick = ""
-        first_a_has_onclick = False
-        first_item = soup.select_one("div.item")
-        if first_item:
-            first_raw_html = str(first_item)[:800]
-            a = first_item.find("a")
-            if a:
-                first_onclick = a.get("onclick", "")[:600]
-                first_a_has_onclick = a.has_attr("onclick")
-        # Test regex on first_onclick
-        import re as _re2
-        regex_test = bool(_re2.search(r'choicePhoto\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]*)"', first_onclick)) if first_onclick else False
-        return jsonify({
-            "photos": photos[:60],
-            "debug": {
-                "status": r.status_code,
-                "url": r.url,
-                "items_found": items_found,
-                "photos_parsed": len(photos),
-                "first_onclick": first_onclick,
-                "first_a_has_onclick": first_a_has_onclick,
-                "regex_test": regex_test,
-                "first_raw_html": first_raw_html,
-            }
-        })
+        return jsonify({"ok": True, "photos": photos[:60]})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
