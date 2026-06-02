@@ -1082,23 +1082,39 @@ def upload_photo():
             "galleryAutocomplete": "",
         }
         if photo_id:
-            save_data[f"photoName[{photo_id}]"] = ""
+            save_data[f"photoName[{photo_id}]"] = tags or ""
         sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
                   data=save_data,
                   headers={"Referer": "https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
                            "Origin": "https://www.sportas.lt"},
                   timeout=10)
 
-        # 5. Randame kelią iš galerijos (naujausia nuotrauka turi būti pirma)
+        # 5. Randame kelią pagal žinomą photo_id HTML'e
         import re as _re
-        gal_r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
-                         timeout=10)
         path = ""
-        m = _re.search(
-            r'choicePhoto\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]*)"',
-            gal_r.text)
-        if m:
-            path = m.group(1)
+        if photo_id:
+            # Pirma bandome su tags kaip paieška (jei yra)
+            search_q = tags.split(",")[0].strip() if tags else ""
+            gal_r = sess.get(
+                "https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
+                params={"query": search_q} if search_q else {},
+                timeout=10)
+            # Ieškome mūsų nuotraukos pagal ID: id="photo_1546213"
+            m = _re.search(
+                rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"',
+                gal_r.text, _re.DOTALL)
+            if m:
+                path = m.group(1)
+            # Jei nerado su search – bandome be paieškos
+            if not path and search_q:
+                gal_r2 = sess.get(
+                    "https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
+                    timeout=10)
+                m2 = _re.search(
+                    rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"',
+                    gal_r2.text, _re.DOTALL)
+                if m2:
+                    path = m2.group(1)
 
         if not path:
             return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), bet kelias nerastas galerijoje"}), 400
