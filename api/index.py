@@ -928,33 +928,32 @@ def get_photos():
         sess = _session()
         if not SPORTAS_USER:
             return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
+        # Paieškos parametras yra "query", ne "search"
         r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
-                     params={"search": q} if q else {}, timeout=12)
+                     params={"query": q} if q else {}, timeout=12)
         soup = _BS4(r.text, "html.parser")
         import re as _re
         photos = []
         seen = set()
-        # Ieškome elementų su onclick, kuriuose yra /cimg/ kelias
-        for el in soup.find_all(onclick=True):
-            oc = el.get("onclick", "")
-            paths = _re.findall(r"['\"](/cimg/[^'\"]+)['\"]", oc)
-            if not paths: continue
-            path = paths[0]
-            if path in seen or "blank" in path: continue
-            seen.add(path)
-            # Antraštė – pirmasis ne-path string argumente
-            all_strings = _re.findall(r"['\"]([^'\"]{2,150})['\"]", oc)
-            title = next((s for s in all_strings if s != path and "/cimg/" not in s), "")
-            img = el.find("img")
-            thumb = img.get("src", path) if img else path
-            photos.append({"path": path, "thumb": thumb, "title": title})
-        # Fallback: tiesioginiai img su /cimg/
-        if not photos:
-            for img in soup.find_all("img"):
-                src = img.get("src", "")
-                if "/cimg/" in src and "blank" not in src and src not in seen:
-                    seen.add(src)
-                    photos.append({"path": src, "thumb": src, "title": img.get("alt", "")})
+        # HTML struktūra: <div class="item"><a onclick="choicePhoto(id, 'url', 'title')">
+        for div in soup.select("div.item"):
+            a = div.find("a", onclick=True)
+            if not a: continue
+            oc = a.get("onclick", "")
+            # Ištraukiame: choicePhoto(1546205, "https://...", "Pavadinimas")
+            m = _re.search(
+                r'choicePhoto\(\s*(\d+)\s*,\s*["\']([^"\']+)["\'],\s*["\']([^"\']*)["\']',
+                oc)
+            if not m: continue
+            photo_id, src_url, title = m.group(1), m.group(2), m.group(3)
+            if photo_id in seen: continue
+            seen.add(photo_id)
+            # Originalus kelias yra f= parametras URL'e
+            fp = _re.search(r'[?&]f=([^&"\']+)', src_url)
+            path = fp.group(1) if fp else src_url
+            # HTML entities decode (& → &)
+            src_url = src_url.replace("&amp;", "&")
+            photos.append({"id": photo_id, "path": path, "thumb": src_url, "title": title})
         return jsonify({"photos": photos[:60]})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
