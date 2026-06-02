@@ -571,6 +571,12 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 .photo-skip{width:100%;padding:8px;background:#334155;color:#94a3b8;border:none;border-radius:6px;cursor:pointer;font-size:.85em}
 .photo-skip:hover{background:#475569;color:#e2e8f0}
 .photo-status{text-align:center;padding:40px;color:#64748b}
+.art-img-section{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:14px;display:none}
+.art-img-section .lbl{font-size:.75em;color:#64748b;margin-bottom:8px}
+.art-img-row{display:flex;align-items:center;gap:12px}
+.art-img-row img{height:80px;width:120px;object-fit:cover;border-radius:4px;background:#1e293b}
+.art-img-row .upload-btn{padding:8px 14px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85em;white-space:nowrap}
+.art-img-row .upload-btn:disabled{background:#334155;color:#64748b;cursor:not-allowed}
 </style>
 </head><body>
 <h1>🏆 Sporto naujienos</h1>
@@ -591,6 +597,16 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 <div class="photo-modal" id="photoModal" onclick="if(event.target===this)closePhotoModal()">
   <div class="photo-box">
     <h2>🖼️ Pasirinkite vedančiąją nuotrauką</h2>
+    <div class="art-img-section" id="artImgSection">
+      <div class="lbl">📷 Straipsnio nuotrauka:</div>
+      <div class="art-img-row">
+        <img id="artImg" src="" alt="" onerror="document.getElementById('artImgSection').style.display='none'">
+        <div>
+          <button class="upload-btn" id="uploadOwnBtn" onclick="uploadArticlePhoto()">⬆️ Įkelti šią nuotrauką</button>
+          <div id="uploadStatus" style="font-size:.75em;color:#94a3b8;margin-top:4px"></div>
+        </div>
+      </div>
+    </div>
     <div class="photo-search">
       <input type="text" id="photoSearchInput" placeholder="Paieška sportas.lt galerijoje..."
              onkeydown="if(event.key==='Enter')searchPhotos()">
@@ -709,10 +725,23 @@ async function copyArt(id, btn) {
   btn.disabled = false;
 }
 let _pendingPost = null;
+let _pendingImageUrl = null;
 async function postArt(id, btn) {
   _pendingPost = {id, btn};
   const art = ALL.find(a => a.id === id);
   const words = art ? art.title.replace(/[^\\w\\sšžčęėįųūŠŽČĘĖĮŲŪ]/g,'').split(/\\s+/).slice(0,3).join(' ') : '';
+  // Straipsnio nuotrauka
+  _pendingImageUrl = (art && art.image) ? art.image : null;
+  const sec = document.getElementById('artImgSection');
+  const upBtn = document.getElementById('uploadOwnBtn');
+  document.getElementById('uploadStatus').textContent = '';
+  upBtn.textContent = '⬆️ Įkelti šią nuotrauką'; upBtn.disabled = false;
+  if (_pendingImageUrl) {
+    document.getElementById('artImg').src = _pendingImageUrl;
+    sec.style.display = 'block';
+  } else {
+    sec.style.display = 'none';
+  }
   document.getElementById('photoSearchInput').value = words;
   document.getElementById('photoGrid').innerHTML = '<div class="photo-status">⏳ Ieškoma...</div>';
   document.getElementById('photoModal').classList.add('open');
@@ -721,6 +750,31 @@ async function postArt(id, btn) {
 function closePhotoModal() {
   document.getElementById('photoModal').classList.remove('open');
   if (_pendingPost) { _pendingPost.btn.disabled = false; _pendingPost = null; }
+  _pendingImageUrl = null;
+}
+async function uploadArticlePhoto() {
+  if (!_pendingImageUrl) return;
+  const btn = document.getElementById('uploadOwnBtn');
+  const status = document.getElementById('uploadStatus');
+  btn.textContent = '⏳ Įkeliama...'; btn.disabled = true;
+  status.textContent = '';
+  try {
+    const r = await fetch('/api/upload-photo', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: _pendingImageUrl})
+    });
+    const d = await r.json();
+    if (d.ok && d.path) {
+      selectPhoto(d.path, '');
+    } else {
+      status.textContent = '❌ ' + (d.error || 'Nepavyko įkelti');
+      btn.textContent = '⬆️ Įkelti šią nuotrauką'; btn.disabled = false;
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    btn.textContent = '⬆️ Įkelti šią nuotrauką'; btn.disabled = false;
+  }
 }
 async function searchPhotos() {
   const q = document.getElementById('photoSearchInput').value.trim();
@@ -953,29 +1007,55 @@ def get_photos():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/gallery-debug", methods=["GET"])
-def gallery_debug():
-    """Laikinas: rodo galerijos popup pilną HTML (upload formos paieškai)."""
+@app.route("/api/upload-photo", methods=["POST"])
+def upload_photo():
+    """Parsisiunčia nuotrauką iš URL ir įkelia į sportas.lt galeriją per submitPhotos."""
+    payload = request.get_json() or {}
+    image_url = payload.get("url", "")
+    if not image_url:
+        return jsonify({"ok": False, "error": "Nenurodytas image URL"}), 400
     try:
         sess = _session()
-        r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto", timeout=12)
-        # Grąžiname sutrumpintą HTML, ieškome upload formos
-        html = r.text
-        # Paieška: form action, input type=file, upload, ajax
-        import re as _re
-        forms = _re.findall(r'<form[^>]*action=["\']([^"\']*)["\'][^>]*>', html, _re.I)
-        file_inputs = _re.findall(r'<input[^>]*type=["\']file["\'][^>]*>', html, _re.I)
-        ajax_urls = _re.findall(r'["\']([^"\']*[Uu]pload[^"\']*)["\']', html)
-        ajax_urls2 = _re.findall(r'url\s*:\s*["\']([^"\']+)["\']', html)
-        return jsonify({
-            "status": r.status_code,
-            "html_len": len(html),
-            "html_snippet": html[:3000],
-            "forms": forms,
-            "file_inputs": file_inputs,
-            "ajax_upload_urls": list(set(ajax_urls))[:20],
-            "ajax_urls": list(set(ajax_urls2))[:20],
-        })
+        if not SPORTAS_USER:
+            return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
+
+        # 1. Parsisiunčiame nuotrauką iš originalaus šaltinio
+        img_r = _req.get(image_url, headers={"User-Agent": _UA,
+                         "Referer": image_url.split("/")[0] + "//" + image_url.split("/")[2]},
+                         timeout=15, allow_redirects=True)
+        if img_r.status_code != 200:
+            return jsonify({"ok": False, "error": f"Nepavyko parsisiųsti: HTTP {img_r.status_code}"}), 400
+
+        ct = img_r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        ext_map = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+                   "image/gif": ".gif", "image/webp": ".jpg"}
+        ext = ext_map.get(ct, ".jpg")
+        raw_name = image_url.split("?")[0].rstrip("/").split("/")[-1]
+        filename = raw_name if any(raw_name.lower().endswith(e) for e in [".jpg",".jpeg",".png",".gif",".webp"]) \
+                   else (raw_name or "photo") + ext
+
+        # 2. Įkeliame į sportas.lt (Fine Uploader multipart)
+        upload_url = "https://www.sportas.lt/Admin/Load/UGallery/submitPhotos"
+        files = {"qqfile": (filename, img_r.content, ct)}
+        data  = {"cfDontBugMe": "please"}
+        up_r  = sess.post(upload_url, files=files, data=data, timeout=20)
+
+        # 3. Parseriname atsakymą
+        try:
+            resp = up_r.json()
+        except Exception:
+            return jsonify({"ok": False, "error": f"Netikėtas atsakymas: {up_r.text[:200]}"}), 400
+
+        if not resp.get("success"):
+            return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
+
+        # Kelias gali būti 'path', 'filePath', arba 'uuid' + failo vardas
+        path = resp.get("path") or resp.get("filePath") or resp.get("uuid") or ""
+        if not path:
+            return jsonify({"ok": False, "error": f"Atsakyme nėra kelio: {resp}"}), 400
+
+        return jsonify({"ok": True, "path": path, "raw": resp})
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
