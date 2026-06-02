@@ -1049,12 +1049,12 @@ def upload_photo():
         if not resp.get("success"):
             return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
 
-        # Kelias gali būti 'path', 'filePath', arba 'uuid' + failo vardas
-        path = resp.get("path") or resp.get("filePath") or resp.get("uuid") or ""
-        if not path:
-            return jsonify({"ok": False, "error": f"Atsakyme nėra kelio: {resp}"}), 400
+        # Sportas.lt naudoja content-addressed saugojimą:
+        # kelias = /Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{md5}{ext}
+        h = hashlib.md5(img_r.content).hexdigest()
+        path = f"/Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{h}{ext}"
 
-        return jsonify({"ok": True, "path": path, "raw": resp})
+        return jsonify({"ok": True, "path": path})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
