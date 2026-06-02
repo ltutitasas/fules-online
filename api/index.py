@@ -954,7 +954,19 @@ def get_photos():
             # HTML entities decode (& → &)
             src_url = src_url.replace("&amp;", "&")
             photos.append({"id": photo_id, "path": path, "thumb": src_url, "title": title})
-        return jsonify({"photos": photos[:60]})
+        # Debug: grąžiname ir papildomą info diagnozei
+        items_found = len(soup.select("div.item"))
+        snippet = r.text[2000:3500] if len(r.text) > 2000 else r.text
+        return jsonify({
+            "photos": photos[:60],
+            "debug": {
+                "status": r.status_code,
+                "url": r.url,
+                "items_found": items_found,
+                "photos_parsed": len(photos),
+                "html_snippet": snippet,
+            }
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
