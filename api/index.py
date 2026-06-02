@@ -771,7 +771,8 @@ async function uploadArticlePhoto() {
     });
     const d = await r.json();
     if (d.ok && d.path) {
-      selectPhoto(d.path, '');
+      const photoTitle = (tags ? tags + ' | ' : '') + 'Organizatorių nuotr.';
+      selectPhoto(d.path, photoTitle);
     } else {
       status.textContent = '❌ ' + (d.error || 'Nepavyko įkelti');
       btn.textContent = '⬆️ Įkelti šią nuotrauką'; btn.disabled = false;
