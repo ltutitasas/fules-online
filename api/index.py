@@ -601,7 +601,9 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
       <div class="lbl">📷 Straipsnio nuotrauka:</div>
       <div class="art-img-row">
         <img id="artImg" src="" alt="" onerror="document.getElementById('artImgSection').style.display='none'">
-        <div>
+        <div style="flex:1">
+          <input type="text" id="photoTags" placeholder="Gairės (kableliu atskirtos)..."
+                 style="width:100%;padding:6px 10px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;font-size:.85em;margin-bottom:7px;box-sizing:border-box">
           <button class="upload-btn" id="uploadOwnBtn" onclick="uploadArticlePhoto()">⬆️ Įkelti šią nuotrauką</button>
           <div id="uploadStatus" style="font-size:.75em;color:#94a3b8;margin-top:4px"></div>
         </div>
@@ -756,13 +758,16 @@ async function uploadArticlePhoto() {
   if (!_pendingImageUrl) return;
   const btn = document.getElementById('uploadOwnBtn');
   const status = document.getElementById('uploadStatus');
+  const tags = document.getElementById('photoTags').value.trim();
   btn.textContent = '⏳ Įkeliama...'; btn.disabled = true;
   status.textContent = '';
+  const art = _pendingPost ? ALL.find(a => a.id === _pendingPost.id) : null;
+  const sport = art ? art.sport : '';
   try {
     const r = await fetch('/api/upload-photo', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: _pendingImageUrl})
+      body: JSON.stringify({url: _pendingImageUrl, tags, sport})
     });
     const d = await r.json();
     if (d.ok && d.path) {
@@ -1012,6 +1017,8 @@ def upload_photo():
     """Parsisiunčia nuotrauką iš URL ir įkelia į sportas.lt galeriją per submitPhotos."""
     payload = request.get_json() or {}
     image_url = payload.get("url", "")
+    tags      = payload.get("tags", "")
+    sport     = payload.get("sport", "")
     if not image_url:
         return jsonify({"ok": False, "error": "Nenurodytas image URL"}), 400
     try:
@@ -1037,8 +1044,7 @@ def upload_photo():
         # 2. Įkeliame į sportas.lt (Fine Uploader multipart)
         upload_url = "https://www.sportas.lt/Admin/Load/UGallery/submitPhotos"
         files = {"qqfile": (filename, img_r.content, ct)}
-        data  = {"cfDontBugMe": "please"}
-        up_r  = sess.post(upload_url, files=files, data=data, timeout=20)
+        up_r  = sess.post(upload_url, files=files, data={"cfDontBugMe": "please"}, timeout=20)
 
         # 3. Parseriname atsakymą
         try:
@@ -1049,10 +1055,21 @@ def upload_photo():
         if not resp.get("success"):
             return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
 
-        # Sportas.lt naudoja content-addressed saugojimą:
-        # kelias = /Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{md5}{ext}
+        # 4. Apskaičiuojame kelią (content-addressed: MD5 hash)
         h = hashlib.md5(img_r.content).hexdigest()
         path = f"/Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{h}{ext}"
+
+        # 5. Išsaugome metaduomenis: šaltinis=3 (Organizatorių nuotr.),
+        #    kategorija pagal sportą, vartotojo gairės
+        cat_id = "128" if "krep" in sport.lower() else "129"  # Krepšinis / Futbolas
+        save_data = {
+            "source":   "3",        # | Organizatorių nuotr.
+            "category": cat_id,
+            "tags":     tags,
+            "action":   "1",        # tik įkelti, be galerijos priskyrimo
+        }
+        sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
+                  data=save_data, timeout=10)
 
         return jsonify({"ok": True, "path": path})
 
