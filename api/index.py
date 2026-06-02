@@ -1089,20 +1089,40 @@ def upload_photo():
                            "Origin": "https://www.sportas.lt"},
                   timeout=10)
 
-        # 5. Randame kelią iš admin listing'o pagal photo_id
+        # 5. Bandome rasti kelią
         import re as _re
         path = ""
-        if photo_id:
-            lst_r = sess.get("https://www.sportas.lt/Admin/Load/UGallery/editPhoto/",
-                             timeout=10)
+        chk_status = "?"
+
+        # A) MD5 iš įkeltų baitų — content-addressed storage
+        h = hashlib.md5(img_r.content).hexdigest()
+        path_md5 = f"/Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{h}{ext}"
+        try:
+            chk = _req.head(f"https://www.sportas.lt{path_md5}", timeout=5)
+            chk_status = chk.status_code
+            if chk.status_code in (200, 301, 302):
+                path = path_md5
+        except Exception:
+            pass
+
+        # B) Fetch editPhoto/{id} — ieškome PIRMO /Uploads/UGallery/photos/ kelio
+        #    (tai yra pati nuotrauka edit formoje, ne listing'o sidebar)
+        if not path and photo_id:
+            lst_r = sess.get(
+                f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}",
+                timeout=10)
+            # Tiesiog pirmasis /Uploads/... kelias puslapyje — tai edit forma
             m = _re.search(
-                rf'[&?](?:amp;)?f=(/Uploads/UGallery/photos/[^\'"]+)[\'"][^"]*"[^"]*editPhoto/{photo_id}[^0-9]',
+                r'(/Uploads/UGallery/photos/[^\s\'"<>?]+)',
                 lst_r.text)
             if m:
-                path = m.group(1)
+                p = m.group(1)
+                # Patikriname kad tai nuotrauka (ne thumbnails suffix)
+                if any(p.lower().endswith(e) for e in (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                    path = p
 
         if not path:
-            return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), bet nerasta listing'e. Ar savePhotos veikia?"}), 400
+            return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), MD5 path={path_md5}, HEAD={chk_status}"}), 400
 
         return jsonify({"ok": True, "path": path, "photo_id": photo_id})
 
