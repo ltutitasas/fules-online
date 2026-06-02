@@ -1124,6 +1124,41 @@ def upload_photo():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/photo-debug/<int:photo_id>", methods=["GET"])
+def photo_debug(photo_id):
+    """Randa photo kelią pagal ID – bando kelis galimus endpoint'us."""
+    try:
+        sess = _session()
+        import re as _re
+        results = {}
+
+        # 1. editPhoto puslapis
+        for url_tpl in [
+            f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}",
+            f"https://www.sportas.lt/Admin/Load/UGallery/editPhoto/{photo_id}/",
+            f"https://www.sportas.lt/Admin/LoadPopup/UGallery/editPhoto/{photo_id}",
+        ]:
+            r = sess.get(url_tpl, timeout=8)
+            paths = _re.findall(r'/Uploads/UGallery/[^\s"\'<>]+', r.text)
+            results[url_tpl] = {"status": r.status_code, "paths": paths[:5], "snippet": r.text[:400]}
+
+        # 2. choicePhoto su photo_id kaip parametru
+        for params in [{"id": photo_id}, {"photoId": photo_id}, {"query": str(photo_id)}]:
+            r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
+                         params=params, timeout=8)
+            m = _re.search(rf'id="photo_{photo_id}".*?choicePhoto\(\s*"([^"]+)"', r.text, _re.DOTALL)
+            results[str(params)] = {"status": r.status_code, "found": bool(m),
+                                    "path": m.group(1) if m else None}
+
+        # 3. addPhotos puslapis – ar rodo naujai įkeltus?
+        r = sess.get("https://www.sportas.lt/Admin/Load/UGallery/addPhotos/", timeout=8)
+        paths = _re.findall(r'/Uploads/UGallery/[^\s"\'<>]+', r.text)
+        results["addPhotos"] = {"status": r.status_code, "paths": paths[:5]}
+
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
     """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""
