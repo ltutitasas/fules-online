@@ -329,18 +329,19 @@ def main():
 
     print(f"✅ Išsaugota {len(sorted_arts)} straipsnių, {len(new_ids)} naujų\n")
 
-    # Telegram pranešimas kai yra naujų straipsnių
-    if recent_ids:
-        recent_arts = [a for a in sorted_arts if a["id"] in recent_ids][:5]
+    # Telegram pranešimas – visi nauji straipsniai (ne tik per 3h)
+    # Praleidžiame jei seen_ids buvo tuščias (pirmas paleidimas)
+    if new_ids and seen_ids:
+        new_arts = [a for a in sorted_arts if a["id"] in new_ids][:5]
         lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
-        for a in recent_arts:
+        for a in new_arts:
             icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
             lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
-        if len(recent_ids) > 5:
-            lines.append(f"\n+{len(recent_ids)-5} daugiau naujienų")
+        if len(new_ids) > 5:
+            lines.append(f"\n+{len(new_ids)-5} daugiau naujienų")
         lines.append("\n🔗 fules.online")
         tg_send("\n".join(lines))
-        print(f"📨 Telegram pranešimas išsiųstas ({len(recent_ids)} naujų)")
+        print(f"📨 Telegram pranešimas išsiųstas ({len(new_ids)} naujų)")
 
 
 if __name__ == "__main__":
