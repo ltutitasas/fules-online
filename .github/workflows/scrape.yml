@@ -23,6 +23,8 @@ jobs:
 
       - name: Paleisti scraperį
         env:
-          KV_REST_API_URL:   ${{ secrets.KV_REST_API_URL }}
-          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          KV_REST_API_URL:      ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN:    ${{ secrets.KV_REST_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scraper/run.py
