@@ -141,10 +141,23 @@ def fetch_rss(site: dict) -> list:
             if hasattr(e,"media_thumbnail") and e.media_thumbnail:
                 image = e.media_thumbnail[0].get("url")
             elif hasattr(e,"enclosures") and e.enclosures:
-                image = e.enclosures[0].get("href")
-            text = ""
+                enc = e.enclosures[0]
+                if enc.get("type","").startswith("image"):
+                    image = enc.get("href")
+            # Fallback: pirma <img> iš HTML turinio
+            raw_html = ""
             if hasattr(e,"content") and e.content:
-                text = html_to_text(e.content[0].get("value",""))
+                raw_html = e.content[0].get("value","")
+            if not raw_html and e.get("summary"):
+                raw_html = e.get("summary","")
+            if not image and raw_html:
+                soup_img = BeautifulSoup(raw_html, "html.parser")
+                img_tag = soup_img.find("img")
+                if img_tag:
+                    src = img_tag.get("src") or img_tag.get("data-src","")
+                    if src and src.startswith("http"):
+                        image = src
+            text = html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
                 text = html_to_text(e.get("summary",""))
             if title and url:
