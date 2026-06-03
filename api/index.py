@@ -12,6 +12,21 @@ KV_TOKEN      = os.environ.get("KV_REST_API_TOKEN", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SPORTAS_USER  = os.environ.get("SPORTAS_USER", "")
 SPORTAS_PASS  = os.environ.get("SPORTAS_PASS", "")
+TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT       = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+def tg_send(text: str) -> dict:
+    if not TG_TOKEN or not TG_CHAT:
+        return {"ok": False, "error": f"token={'set' if TG_TOKEN else 'MISSING'}, chat={'set' if TG_CHAT else 'MISSING'}"}
+    try:
+        r = _req.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"},
+            timeout=10,
+        )
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 _SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7]}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
@@ -1166,6 +1181,13 @@ def photo_debug(photo_id):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/tg-test", methods=["GET"])
+def tg_test():
+    result = tg_send("🧪 Testas – Telegram pranešimai veikia!")
+    return jsonify({"telegram_response": result,
+                    "token_set": bool(TG_TOKEN),
+                    "chat_set": bool(TG_CHAT)})
 
 @app.route("/api/sources", methods=["GET"])
 def get_sources():

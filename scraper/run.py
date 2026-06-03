@@ -17,15 +17,21 @@ TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 def tg_send(text: str):
     if not TG_TOKEN or not TG_CHAT:
+        print(f"  ⚠️  Telegram: token={bool(TG_TOKEN)}, chat={bool(TG_CHAT)} – praleista")
         return
     try:
-        _req.post(
+        r = _req.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
             json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"},
             timeout=10,
         )
+        data = r.json()
+        if data.get("ok"):
+            print(f"  ✅ Telegram išsiųsta (msg_id={data['result']['message_id']})")
+        else:
+            print(f"  ❌ Telegram klaida: {data}")
     except Exception as e:
-        print(f"  ⚠️  Telegram klaida: {e}")
+        print(f"  ⚠️  Telegram exception: {e}")
 
 def kv_get(key: str):
     r = _req.get(f"{KV_URL}/get/{key}", headers=_HDR, timeout=10)
