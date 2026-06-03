@@ -12,6 +12,21 @@ KV_URL   = os.environ["KV_REST_API_URL"]
 KV_TOKEN = os.environ["KV_REST_API_TOKEN"]
 _HDR     = {"Authorization": f"Bearer {KV_TOKEN}"}
 
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+def tg_send(text: str):
+    if not TG_TOKEN or not TG_CHAT:
+        return
+    try:
+        _req.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"  ⚠️  Telegram klaida: {e}")
+
 def kv_get(key: str):
     r = _req.get(f"{KV_URL}/get/{key}", headers=_HDR, timeout=10)
     result = r.json().get("result")
@@ -313,6 +328,19 @@ def main():
         kv_set("dates_cache", dates_cache, ex=86400 * 30)  # 30 dienų
 
     print(f"✅ Išsaugota {len(sorted_arts)} straipsnių, {len(new_ids)} naujų\n")
+
+    # Telegram pranešimas kai yra naujų straipsnių
+    if recent_ids:
+        recent_arts = [a for a in sorted_arts if a["id"] in recent_ids][:5]
+        lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+        for a in recent_arts:
+            icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+            lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
+        if len(recent_ids) > 5:
+            lines.append(f"\n+{len(recent_ids)-5} daugiau naujienų")
+        lines.append("\n🔗 fules.online")
+        tg_send("\n".join(lines))
+        print(f"📨 Telegram pranešimas išsiųstas ({len(recent_ids)} naujų)")
 
 
 if __name__ == "__main__":
