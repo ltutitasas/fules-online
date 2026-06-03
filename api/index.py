@@ -390,6 +390,12 @@ def _fetch_rss(site):
             image = None
             if hasattr(e,"media_thumbnail") and e.media_thumbnail:
                 image = e.media_thumbnail[0].get("url")
+            elif hasattr(e,"media_content") and e.media_content:
+                for mc in e.media_content:
+                    if mc.get("medium") == "image" or mc.get("type","").startswith("image"):
+                        image = mc.get("url",""); break
+                if not image:
+                    image = e.media_content[0].get("url","") or None
             elif hasattr(e,"enclosures") and e.enclosures:
                 enc = e.enclosures[0]
                 if enc.get("type","").startswith("image"):
