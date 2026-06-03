@@ -521,6 +521,19 @@ def run_scraper():
         _kv_sadd("seen_ids", *list(new_ids))
     if dates_changed:
         _kv_set("dates_cache", dates_cache, ex=86400*30)
+
+    # Telegram – visi nauji straipsniai (ne pirmas paleidimas)
+    if new_ids and seen_ids:
+        new_arts = [a for a in sorted_arts if a["id"] in new_ids][:5]
+        lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+        for a in new_arts:
+            icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+            lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
+        if len(new_ids) > 5:
+            lines.append(f"\n+{len(new_ids)-5} daugiau naujienų")
+        lines.append("\n🔗 fules-online.vercel.app")
+        tg_send("\n".join(lines))
+
     return len(sorted_arts), len(new_ids)
 
 
