@@ -154,7 +154,8 @@ def fetch_rss(site: dict) -> list:
                 soup_img = BeautifulSoup(raw_html, "html.parser")
                 img_tag = soup_img.find("img")
                 if img_tag:
-                    src = img_tag.get("src") or img_tag.get("data-src","")
+                    # data-src pirmiau (lazy load), tada src
+                    src = img_tag.get("data-src","") or img_tag.get("src","")
                     if src and src.startswith("http"):
                         image = src
             text = html_to_text(raw_html) if raw_html else ""
