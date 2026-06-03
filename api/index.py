@@ -810,15 +810,17 @@ async function uploadArticlePhoto() {
   status.textContent = '';
   const art = _pendingPost ? ALL.find(a => a.id === _pendingPost.id) : null;
   const sport = art ? art.sport : '';
+  const site  = art ? art.site  : '';
   try {
     const r = await fetch('/api/upload-photo', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: _pendingImageUrl, tags, sport})
+      body: JSON.stringify({url: _pendingImageUrl, tags, sport, site})
     });
     const d = await r.json();
     if (d.ok && d.path) {
-      const photoTitle = (tags ? tags + ' | ' : '') + 'Organizatorių nuotr.';
+      const sourceName = d.source_name || 'Organizatorių nuotr.';
+      const photoTitle = (tags ? tags + ' | ' : '') + sourceName;
       selectPhoto(d.path, photoTitle);
     } else {
       status.textContent = '❌ ' + (d.error || 'Nepavyko įkelti');
@@ -1067,6 +1069,13 @@ def upload_photo():
     image_url = payload.get("url", "")
     tags      = payload.get("tags", "")
     sport     = payload.get("sport", "")
+    site      = payload.get("site", "")
+
+    # Šaltinių žemėlapis: site pavadinimas → (source_id, source_name)
+    _SOURCE_MAP = {
+        "LKL": ("2642", 'LKL, kurią remia „Betsson" nuotr.'),
+    }
+    source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:
         return jsonify({"ok": False, "error": "Nenurodytas image URL"}), 400
     try:
@@ -1123,7 +1132,7 @@ def upload_photo():
         cat_id = "128" if "krep" in sport.lower() else "129"
         save_data = {
             "file":    "",
-            "source":  "3",      # | Organizatorių nuotr.
+            "source":  source_id,
             "category": cat_id,
             "tags":    tags,
             "action":  "1",
@@ -1172,7 +1181,7 @@ def upload_photo():
         if not path:
             return jsonify({"ok": False, "error": f"Nuotrauka įkelta (id={photo_id}), MD5 path={path_md5}, HEAD={chk_status}"}), 400
 
-        return jsonify({"ok": True, "path": path, "photo_id": photo_id})
+        return jsonify({"ok": True, "path": path, "photo_id": photo_id, "source_name": source_name})
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
