@@ -1073,7 +1073,10 @@ def upload_photo():
 
     # Šaltinių žemėlapis: site pavadinimas → (source_id, source_name)
     _SOURCE_MAP = {
-        "LKL": ("2642", 'LKL, kurią remia „Betsson" nuotr.'),
+        "LKL":              ("2642", 'LKL, kurią remia „Betsson" nuotr.'),
+        "FK Žalgiris":      ("11",   "fkzalgiris.lt nuotr."),
+        "Žalgiris":         ("57",   "zalgiris.lt nuotr."),
+        "Žalgiris futbolas":("57",   "zalgiris.lt nuotr."),
     }
     source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:
