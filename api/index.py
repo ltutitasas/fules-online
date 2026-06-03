@@ -871,6 +871,28 @@ async function selectPhoto(path, title) {
   } catch(e) { btn.textContent = '❌ Klaida'; btn.disabled = false; }
 }
 let _lastRecent = '';
+let _swReg = null;
+
+// Service Worker registracija
+async function _initSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    _swReg = await navigator.serviceWorker.register('/sw.js', {scope: '/'});
+  } catch(e) { console.log('SW klaida:', e); }
+}
+_initSW();
+
+// Siunčia notification per SW (veikia ir fone)
+function _notify(title, body, url) {
+  if (Notification.permission !== 'granted') return;
+  if (_swReg && (_swReg.active || _swReg.installing || _swReg.waiting)) {
+    const sw = _swReg.active || _swReg.waiting || _swReg.installing;
+    sw.postMessage({type: 'NOTIFY', title, body, url});
+  } else {
+    new Notification(title, {body});
+  }
+}
+
 async function _checkNew() {
   try {
     const r = await fetch('/api/articles');
@@ -881,8 +903,13 @@ async function _checkNew() {
       ALL = d.articles || []; RECENT = new Set(d.recent_ids || []);
       document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
-      if (Notification.permission === 'granted' && d.recent_ids?.length)
-        new Notification('🏆 Nauja naujiena!', {body: `Rasta ${d.recent_ids.length} nauja(-ų)`});
+      if (d.recent_ids?.length) {
+        const first = ALL.find(a => d.recent_ids.includes(a.id));
+        const icon = first?.sport === 'futbolas' ? '⚽' : '🏀';
+        _notify('🏆 Sporto naujienos',
+                icon + ' ' + (first?.title || `Rasta ${d.recent_ids.length} nauja(-ų)`),
+                first?.url || '/');
+      }
       localStorage.setItem('lastSeenRecent', newKey);
     }
     _lastRecent = newKey;
@@ -915,7 +942,8 @@ async function askNotif() {
   const perm = await Notification.requestPermission();
   if (perm === 'granted') {
     btn.textContent = '✅ Įjungta';
-    new Notification('🏆 Sporto naujienos', {body: 'Pranešimai įjungti! Gausite žinutę kai atsiras naujienų.'});
+    await _initSW();
+    _notify('🏆 Sporto naujienos', 'Pranešimai įjungti! Gausite žinutę kai atsiras naujienų.', '/');
   } else {
     btn.textContent = '🚫 Užblokuota';
   }
@@ -935,8 +963,7 @@ loadData().then(() => {
   if (stored && stored !== _lastRecent && RECENT.size > 0) {
     const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
     document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
-    if (Notification.permission === 'granted')
-      new Notification('🏆 Nauja naujiena!', {body: `Rasta ${RECENT.size} nauja(-ų) nuo paskutinio apsilankymo`});
+    _notify('🏆 Sporto naujienos', `Rasta ${RECENT.size} nauja(-ų) nuo paskutinio apsilankymo`, '/');
   }
   localStorage.setItem('lastSeenRecent', _lastRecent);
   _updateNotifBtn();
@@ -945,7 +972,48 @@ setInterval(_checkNew, 10000);
 </script>
 </body></html>"""
 
+# ── Service Worker ─────────────────────────────────────────────────
+_SW_JS = """
+// Sporto naujienų Service Worker
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+
+// Puslapis praneša kai randa naujų straipsnių
+self.addEventListener('message', e => {
+  if (!e.data) return;
+  if (e.data.type === 'NOTIFY') {
+    self.registration.showNotification(e.data.title || '🏆 Sporto naujienos', {
+      body:      e.data.body || 'Nauja naujiena!',
+      icon:      'https://fules-online.vercel.app/apple-touch-icon.png',
+      tag:       'sporto-naujienos',
+      renotify:  true,
+      data:      { url: e.data.url || 'https://fules-online.vercel.app/' },
+    });
+  }
+});
+
+// Paspaudus notification – atidaryti puslapį
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || 'https://fules-online.vercel.app/';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+      for (const c of cs) {
+        if (c.url.startsWith('https://fules-online.vercel.app') && 'focus' in c)
+          return c.focus();
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
+"""
+
 # ── Routes ─────────────────────────────────────────────────────────
+@app.route("/sw.js")
+def service_worker():
+    return Response(_SW_JS, content_type="application/javascript",
+                    headers={"Service-Worker-Allowed": "/"})
+
 @app.route("/")
 def serve_index():
     return Response(_INDEX_HTML, content_type="text/html; charset=utf-8")
