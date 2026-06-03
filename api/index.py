@@ -875,7 +875,7 @@ function _updateNotifBtn() {
   const btn = document.getElementById('notifBtn');
   if (!btn) return;
   if (!('Notification' in window)) { btn.textContent = '🔔 Nepalaikoma'; btn.disabled = true; return; }
-  if (Notification.permission === 'granted') btn.textContent = '✅ Pranešimai';
+  if (Notification.permission === 'granted') btn.textContent = '✅ Įjungta';
   else if (Notification.permission === 'denied') { btn.textContent = '🚫 Užblokuota'; btn.disabled = true; }
   else btn.textContent = '🔔 Pranešimai';
 }
