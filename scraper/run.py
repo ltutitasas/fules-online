@@ -75,7 +75,7 @@ def html_to_text(html: str) -> str:
 # ── Svetainių sąrašas ─────────────────────────────────────────────
 SITES = [
     # ⚽ FUTBOLAS – RSS
-    {"name":"FK Banga",       "sport":"futbolas",  "rss":"https://www.fkbanga.lt/feed/"},
+    {"name":"FK Banga",       "sport":"futbolas",  "rss":"https://www.fkbanga.lt/feed/", "og_image_fallback": True, "image_selector": ".single-feat img"},
     {"name":"FC Džiugas",     "sport":"futbolas",  "rss":"https://www.fcdziugas.lt/feed/"},
     {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/", "og_image_fallback": True},
     {"name":"FK Panevėžys",   "sport":"futbolas",  "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
