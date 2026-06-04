@@ -327,7 +327,7 @@ _SITES = [
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
     {"name":"Utenos Juventus",   "sport":"krepšinis", "sportas_source":"138",  "rss":"https://utenosjuventus.lt/feed/"},
     {"name":"Lietuva Basketball","sport":"krepšinis", "sportas_source":"1034", "rss":"https://lietuva.basketball/feed/"},
-    {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/"},
+    {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/", "og_image_fallback": True, "image_selector": ".article .image img"},
     {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http",
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
@@ -513,6 +513,7 @@ def run_scraper():
     # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
     import re as _re
     _OG_FALLBACK_SITES = {s["name"] for s in _SITES if s.get("og_image_fallback")}
+    _SITE_IMG_SEL = {s["name"]: s["image_selector"] for s in _SITES if s.get("image_selector")}
     _OG_PATS = [
         r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
         r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
@@ -523,9 +524,18 @@ def run_scraper():
     def _fetch_og_image(art):
         try:
             r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=4)
+            html = r.text
+            # 1. og:image / itemprop / twitter:image meta
             for pat in _OG_PATS:
-                m = _re.search(pat, r.text)
+                m = _re.search(pat, html)
                 if m: return art["id"], m.group(1)
+            # 2. CSS selektorius (saituose su image_selector)
+            sel = _SITE_IMG_SEL.get(art["site"], "")
+            if sel:
+                el = _BS4(html, "html.parser").select_one(sel)
+                if el:
+                    src = el.get("data-src") or el.get("src", "")
+                    if src and src.startswith("http"): return art["id"], src
         except: pass
         return art["id"], None
     arts_no_img = [a for a in all_arts if not a.get("image") and a.get("url")
