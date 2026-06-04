@@ -256,7 +256,7 @@ def _do_post(article, photo_path="", photo_title=""):
     data += [
         ("n18","0"),("sensitive","0"),("top10","0"),("useSpecNews","0"),
         ("orderedArticle","0"),("leftBlocks","0"),("cacheKey",""),
-        ("status","0"),("exportArticle","1"),
+        ("status","1"),("exportArticle","1"),
         ("publish[StartDate]", pub_date),
         ("publish[StartTime]", pub_time),
         ("publish[EndDate]","2030-01-01"),("publish[EndTime]","00:00"),
