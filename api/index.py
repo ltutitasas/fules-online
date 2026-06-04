@@ -1369,6 +1369,36 @@ def photo_debug(photo_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/rss-debug", methods=["GET"])
+def rss_debug():
+    """Rodo ką feedparser gauna iš RSS. ?url=https://..."""
+    rss_url = request.args.get("url", "https://www.lff.lt/feed/")
+    try:
+        feed = feedparser.parse(rss_url, request_headers={"User-Agent": _UA})
+        results = []
+        for e in feed.entries[:5]:
+            info = {
+                "title": e.get("title","")[:60],
+                "link":  e.get("link",""),
+                "media_thumbnail": (e.media_thumbnail if hasattr(e,"media_thumbnail") and e.media_thumbnail else None),
+                "media_content":   (e.media_content   if hasattr(e,"media_content")   and e.media_content   else None),
+                "enclosures":      (e.enclosures       if hasattr(e,"enclosures")       and e.enclosures       else None),
+                "has_content_img": None,
+            }
+            raw_html = ""
+            if hasattr(e,"content") and e.content:
+                raw_html = e.content[0].get("value","")
+            if not raw_html and e.get("summary"):
+                raw_html = e.get("summary","")
+            if raw_html:
+                pg = _BS4(raw_html, "html.parser")
+                it = pg.find("img")
+                info["has_content_img"] = (it.get("src") or it.get("data-src")) if it else None
+            results.append(info)
+        return jsonify({"entries": results})
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
 @app.route("/api/img-debug", methods=["GET"])
 def img_debug():
     """Testuoja og:image paėmimą iš URL. ?url=https://..."""
