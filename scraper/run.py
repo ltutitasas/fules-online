@@ -83,7 +83,7 @@ SITES = [
     {"name":"FK TransINVEST", "sport":"futbolas",  "rss":"https://fktransinvest.lt/feed/"},
     {"name":"FA Šiauliai",    "sport":"futbolas",  "rss":"https://siauliufa.lt/feed/"},
     {"name":"FK Žalgiris",    "sport":"futbolas",  "rss":"https://fkzalgiris.lt/feed/"},
-    {"name":"LFF",            "sport":"futbolas",  "rss":"https://www.lff.lt/feed/"},
+    {"name":"LFF",            "sport":"futbolas",  "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
     # ⚽ FUTBOLAS – HTTP
     {"name":"Top Lyga", "sport":"futbolas", "method":"http",
      "url":"https://toplyga.lt/naujienos",
@@ -167,6 +167,20 @@ def fetch_rss(site: dict) -> list:
             text = html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
                 text = html_to_text(e.get("summary",""))
+            # og:image fallback saituose su og_image_fallback=True
+            if not image and url and site.get("og_image_fallback"):
+                try:
+                    import re as _re
+                    og_r = _req.get(url, headers={"User-Agent": UA}, timeout=5, stream=True)
+                    head_html = og_r.raw.read(8000).decode("utf-8", errors="ignore")
+                    og_r.close()
+                    m = _re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)', head_html)
+                    if not m:
+                        m = _re.search(r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']', head_html)
+                    if m:
+                        image = m.group(1)
+                except Exception:
+                    pass
             if title and url:
                 articles.append({
                     "site":site["name"], "sport":site.get("sport",""),

@@ -321,7 +321,7 @@ _SITES = [
     {"name":"FK TransINVEST",    "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fktransinvest.lt/feed/"},
     {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/"},
     {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/"},
-    {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/"},
+    {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/"},
     {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/"},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/"},
@@ -418,6 +418,20 @@ def _fetch_rss(site):
             text = _html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
                 text = _html_to_text(e.get("summary",""))
+            # og:image fallback – tik saituose su og_image_fallback=True
+            if not image and url and site.get("og_image_fallback"):
+                try:
+                    og_r = _req.get(url, headers={"User-Agent": _UA}, timeout=5, stream=True)
+                    head_html = og_r.raw.read(8000).decode("utf-8", errors="ignore")
+                    og_r.close()
+                    import re as _re
+                    m = _re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)', head_html)
+                    if not m:
+                        m = _re.search(r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']', head_html)
+                    if m:
+                        image = m.group(1)
+                except Exception:
+                    pass
             if title and url:
                 arts.append({"site":site["name"],"sport":site.get("sport",""),
                     "title":title,"url":url,"date":date,"image":image,
