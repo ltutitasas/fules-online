@@ -171,9 +171,8 @@ def fetch_rss(site: dict) -> list:
             if not image and url and site.get("og_image_fallback"):
                 try:
                     import re as _re
-                    og_r = _req.get(url, headers={"User-Agent": UA}, timeout=5, stream=True)
-                    head_html = og_r.raw.read(8000).decode("utf-8", errors="ignore")
-                    og_r.close()
+                    og_r = _req.get(url, headers={"User-Agent": UA}, timeout=6)
+                    full_html = og_r.text
                     patterns = [
                         r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
                         r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
@@ -182,8 +181,18 @@ def fetch_rss(site: dict) -> list:
                         r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
                     ]
                     for pat in patterns:
-                        m = _re.search(pat, head_html)
+                        m = _re.search(pat, full_html)
                         if m: image = m.group(1); break
+                    if not image:
+                        pg = BeautifulSoup(full_html, "html.parser")
+                        for img in pg.find_all("img"):
+                            src = img.get("src","")
+                            if not src or not src.startswith("http"): continue
+                            try: w = int(img.get("width","0"))
+                            except: w = 0
+                            if w and w < 200: continue
+                            if any(x in src for x in ["logo","icon","avatar","thumb","sprite"]): continue
+                            image = src; break
                 except Exception:
                     pass
             if title and url:
