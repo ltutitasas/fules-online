@@ -897,20 +897,25 @@ async function _checkNew() {
   try {
     const r = await fetch('/api/articles');
     const d = await r.json();
-    const newKey = (d.recent_ids||[]).sort().join(',');
+    const arts = d.articles || [];
+    const recentIds = d.recent_ids || [];
+    // Sekame: recent_ids + bendras skaičius + pirmo straipsnio ID
+    const newKey = recentIds.sort().join(',') + '|' + arts.length + '|' + (arts[0]?.id||'');
     const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
     if (newKey !== _lastRecent && _lastRecent !== '') {
-      ALL = d.articles || []; RECENT = new Set(d.recent_ids || []);
+      const hadRecent = ALL.length > 0;
+      ALL = arts; RECENT = new Set(recentIds);
       document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
-      if (d.recent_ids?.length) {
-        const first = ALL.find(a => d.recent_ids.includes(a.id));
-        const icon = first?.sport === 'futbolas' ? '⚽' : '🏀';
-        _notify('🏆 Sporto naujienos',
-                icon + ' ' + (first?.title || `Rasta ${d.recent_ids.length} nauja(-ų)`),
-                first?.url || '/');
+      // Notification: pirmiausia recent, o jei nėra – pirmasis naujas
+      const notifArt = recentIds.length
+        ? ALL.find(a => recentIds.includes(a.id))
+        : arts[0];
+      if (notifArt && hadRecent) {
+        const icon = notifArt.sport === 'futbolas' ? '⚽' : '🏀';
+        _notify('🏆 Sporto naujienos', icon + ' ' + notifArt.title, notifArt.url || '/');
       }
-      localStorage.setItem('lastSeenRecent', newKey);
+      localStorage.setItem('lastSeenRecent', recentIds.sort().join(','));
     }
     _lastRecent = newKey;
   } catch {}
@@ -957,7 +962,7 @@ function _updateNotifBtn() {
   else btn.textContent = '🔔 Pranešimai';
 }
 loadData().then(() => {
-  _lastRecent = [...RECENT].sort().join(',');
+  _lastRecent = [...RECENT].sort().join(',') + '|' + ALL.length + '|' + (ALL[0]?.id||'');
   // Praleistos notifikacijos: lyginame su paskutiniu apsilankymu
   const stored = localStorage.getItem('lastSeenRecent') || '';
   if (stored && stored !== _lastRecent && RECENT.size > 0) {
