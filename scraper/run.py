@@ -271,6 +271,7 @@ def main():
 
     seen_ids    = kv_smembers("seen_ids")
     dates_cache = kv_get("dates_cache") or {}   # {article_id: iso_date}
+    first_seen  = kv_get("first_seen")  or {}   # {article_id: iso} – kada MES pirmą kartą pamatėme
     print(f"📦 Žinomų straipsnių: {len(seen_ids)}, datos cache: {len(dates_cache)}\n")
 
     rss_sites  = [s for s in SITES if "rss" in s]
@@ -334,6 +335,7 @@ def main():
     # Datos: naujoms be datos – fiksuojame dabar; senoms – atkuriame iš cache
     now_iso = datetime.now(timezone.utc).isoformat()
     dates_changed = False
+    first_seen_changed = False
     for art in all_articles:
         aid = art["id"]
         if not art.get("date"):
@@ -343,6 +345,10 @@ def main():
                 art["date"] = now_iso               # pirmas kartas – fiksuojame
                 dates_cache[aid] = now_iso
                 dates_changed = True
+        # first_seen – visada fiksuojame kada pirmą kartą pamatėme (nepriklausomai nuo RSS datos)
+        if aid in new_ids and aid not in first_seen:
+            first_seen[aid] = now_iso
+            first_seen_changed = True
 
     # Rikiuoti pagal datą
     all_articles.sort(key=_sort_key, reverse=True)
@@ -379,20 +385,21 @@ def main():
     if new_ids:
         kv_sadd("seen_ids", *list(new_ids))
     if dates_changed:
-        kv_set("dates_cache", dates_cache, ex=86400 * 30)  # 30 dienų
+        kv_set("dates_cache", dates_cache, ex=86400 * 30)
+    if first_seen_changed:
+        kv_set("first_seen", first_seen, ex=86400 * 30)
 
     print(f"✅ Išsaugota {len(sorted_arts)} straipsnių, {len(new_ids)} naujų\n")
 
-    # Telegram – tik nauji IR ne senesni nei 24h
+    # Telegram – tik nauji IR sistemos pirmo pamatymo laikas ne senesnis nei 24h
     if new_ids and seen_ids:
         tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         def _is_fresh(art):
-            d = art.get("date","")
-            if not d: return True
-            try: return parsedate_to_datetime(d) >= tg_cutoff
-            except:
-                try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
-                except: return True
+            # Naudojame first_seen (kada MES pamatėme), ne RSS datą
+            d = first_seen.get(art["id"], "")
+            if not d: return True   # pirmas kartas – tikrai naujas
+            try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
+            except: return True
         fresh_arts = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]
         if fresh_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
