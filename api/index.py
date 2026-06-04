@@ -192,7 +192,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
 
     if not SPORTAS_USER:
-        return False, "SPORTAS_USER env var nenustatytas"
+        return False, f"SPORTAS_USER env var nenustatytas | photo_tags={repr(photo_tags)} | ai_tags={repr(ai_tags)} | tags_list={tags_list}"
 
     sess      = _session()
     # Sportas.lt šaltinio ID: pirma žiūrim rankinį priskyrimą, tada fuzzy match
@@ -299,9 +299,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
             # Tikriname ar atsirado naujas straipsnis (articleList rodo naujausius)
             first_row = fsoup.select_one("table tr:nth-child(2) td, .list-item:first-child")
             first_title = first_row.get_text(strip=True)[:80] if first_row else ""
-            return True, f"redirect:{location} | source:{source_id} | msg:{msg} | first:{first_title}"
+            return True, f"redirect:{location} | source:{source_id} | tags:{tags_list} | msg:{msg} | first:{first_title}"
         except Exception as ex:
-            return True, f"redirect:{location} | source:{source_id} | follow_err:{ex}"
+            return True, f"redirect:{location} | source:{source_id} | tags:{tags_list} | follow_err:{ex}"
     body = r.text[:500].replace("\n", " ").replace("\r", "")
     return False, f"HTTP {r.status_code} | save_url={save_url[:80]} | location={location} | source:{source_id} | body:{body[:200]}"
 
@@ -1172,7 +1172,7 @@ def post():
     if not article:
         return jsonify({"ok": False, "error": "Nerasta"}), 404
     ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title, photo_tags=photo_tags)
-    return jsonify({"ok": ok, "message": msg})
+    return jsonify({"ok": ok, "message": msg, "_debug_photo_tags": photo_tags})
 
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
