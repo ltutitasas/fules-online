@@ -102,7 +102,7 @@ SITES = [
     # 🏀 KREPŠINIS – RSS
     {"name":"BC Neptūnas",       "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/"},
     {"name":"BC Lietkabelis",    "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/"},
-    {"name":"BC Šiauliai",       "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/"},
+    {"name":"BC Šiauliai",       "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
     {"name":"Utenos Juventus",   "sport":"krepšinis", "rss":"https://utenosjuventus.lt/feed/"},
     {"name":"Lietuva Basketball","sport":"krepšinis", "rss":"https://lietuva.basketball/feed/"},
     {"name":"BC Rytas",          "sport":"krepšinis", "rss":"https://rytasvilnius.lt/feed/"},
@@ -174,11 +174,16 @@ def fetch_rss(site: dict) -> list:
                     og_r = _req.get(url, headers={"User-Agent": UA}, timeout=5, stream=True)
                     head_html = og_r.raw.read(8000).decode("utf-8", errors="ignore")
                     og_r.close()
-                    m = _re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)', head_html)
-                    if not m:
-                        m = _re.search(r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']', head_html)
-                    if m:
-                        image = m.group(1)
+                    patterns = [
+                        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
+                        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
+                        r'<meta[^>]+itemprop=["\']image["\'][^>]+content=["\'](https?://[^"\']+)',
+                        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+itemprop=["\']image["\']',
+                        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
+                    ]
+                    for pat in patterns:
+                        m = _re.search(pat, head_html)
+                        if m: image = m.group(1); break
                 except Exception:
                     pass
             if title and url:
