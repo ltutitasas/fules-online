@@ -315,7 +315,7 @@ _SITES = [
     # sportas_source: tikslus sportas.lt šaltinio ID. "" = automatinis matching (fallback).
     {"name":"FK Banga",          "sport":"futbolas",  "sportas_source":"276",  "rss":"https://www.fkbanga.lt/feed/"},
     {"name":"FC Džiugas",        "sport":"futbolas",  "sportas_source":"1",    "rss":"https://www.fcdziugas.lt/feed/"},
-    {"name":"FC Hegelmann",      "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fchegelmann.com/feed/"},
+    {"name":"FC Hegelmann",      "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fchegelmann.com/feed/", "og_image_fallback": True},
     {"name":"FK Panevėžys",      "sport":"futbolas",  "sportas_source":"1029", "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
     {"name":"FK Sūduva",         "sport":"futbolas",  "sportas_source":"118",  "rss":"https://fksuduva.lt/feed/"},
     {"name":"FK TransINVEST",    "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fktransinvest.lt/feed/"},

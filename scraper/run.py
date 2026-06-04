@@ -77,7 +77,7 @@ SITES = [
     # ⚽ FUTBOLAS – RSS
     {"name":"FK Banga",       "sport":"futbolas",  "rss":"https://www.fkbanga.lt/feed/"},
     {"name":"FC Džiugas",     "sport":"futbolas",  "rss":"https://www.fcdziugas.lt/feed/"},
-    {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/"},
+    {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/", "og_image_fallback": True},
     {"name":"FK Panevėžys",   "sport":"futbolas",  "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
     {"name":"FK Sūduva",      "sport":"futbolas",  "rss":"https://fksuduva.lt/feed/"},
     {"name":"FK TransINVEST", "sport":"futbolas",  "rss":"https://fktransinvest.lt/feed/"},
