@@ -101,7 +101,7 @@ SITES = [
      "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
     # 🏀 KREPŠINIS – RSS
     {"name":"BC Neptūnas",       "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/"},
-    {"name":"BC Lietkabelis",    "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/"},
+    {"name":"BC Lietkabelis",    "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
     {"name":"Utenos Juventus",   "sport":"krepšinis", "rss":"https://utenosjuventus.lt/feed/"},
     {"name":"Lietuva Basketball","sport":"krepšinis", "rss":"https://lietuva.basketball/feed/"},
