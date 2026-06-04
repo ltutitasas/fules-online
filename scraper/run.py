@@ -270,6 +270,7 @@ def main():
     print(f"{'═'*55}\n")
 
     seen_ids    = kv_smembers("seen_ids")
+    seen_urls   = kv_smembers("seen_urls")   # URL deduplication – net jei pavadinimas pasikeitė
     dates_cache = kv_get("dates_cache") or {}   # {article_id: iso_date}
     first_seen  = kv_get("first_seen")  or {}   # {article_id: iso} – kada MES pirmą kartą pamatėme
     print(f"📦 Žinomų straipsnių: {len(seen_ids)}, datos cache: {len(dates_cache)}\n")
@@ -300,8 +301,9 @@ def main():
         print(f"  {icon} {s['name']}: {len(arts)}")
         time.sleep(1)
 
-    # Nauji straipsniai
-    new_ids = {a["id"] for a in all_articles if a["id"] not in seen_ids}
+    # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų)
+    new_ids = {a["id"] for a in all_articles
+               if a["id"] not in seen_ids and a.get("url","") not in seen_urls}
     print(f"\n📊 Iš viso: {len(all_articles)} | Naujų: {len(new_ids)}")
 
     # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
@@ -384,6 +386,9 @@ def main():
     kv_set("recent_ids", recent_ids,   ex=3600 * 3)
     if new_ids:
         kv_sadd("seen_ids", *list(new_ids))
+        new_urls = [a["url"] for a in all_articles if a["id"] in new_ids and a.get("url")]
+        if new_urls:
+            kv_sadd("seen_urls", *new_urls)
     if dates_changed:
         kv_set("dates_cache", dates_cache, ex=86400 * 30)
     if first_seen_changed:

@@ -494,6 +494,7 @@ def _sort_key(art):
 
 def run_scraper():
     seen_ids    = _kv_smembers("seen_ids")
+    seen_urls   = _kv_smembers("seen_urls")   # URL deduplication – net jei pavadinimas pasikeitė
     dates_cache = _kv_get("dates_cache") or {}
     first_seen  = _kv_get("first_seen") or {}   # {id: iso} – kada MES pirmą kartą pamatėme
     rss_sites  = [s for s in _SITES if "rss" in s]
@@ -505,7 +506,9 @@ def run_scraper():
         for fut in as_completed(futs):
             try: all_arts.extend(fut.result())
             except: pass
-    new_ids = {a["id"] for a in all_arts if a["id"] not in seen_ids}
+    # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų)
+    new_ids = {a["id"] for a in all_arts
+               if a["id"] not in seen_ids and a.get("url","") not in seen_urls}
 
     # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
     import re as _re
@@ -573,6 +576,9 @@ def run_scraper():
     _kv_set("recent_ids", recent_ids,  ex=3600*3)
     if new_ids:
         _kv_sadd("seen_ids", *list(new_ids))
+        new_urls = [a["url"] for a in all_arts if a["id"] in new_ids and a.get("url")]
+        if new_urls:
+            _kv_sadd("seen_urls", *new_urls)
     if dates_changed:
         _kv_set("dates_cache", dates_cache, ex=86400*30)
     if first_seen_changed:
