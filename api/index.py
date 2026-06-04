@@ -1369,6 +1369,45 @@ def photo_debug(photo_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/img-debug", methods=["GET"])
+def img_debug():
+    """Testuoja og:image paėmimą iš URL. ?url=https://..."""
+    import re as _re
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Reikia ?url=..."}), 400
+    try:
+        r = _req.get(url, headers={"User-Agent": _UA}, timeout=8)
+        full_html = r.text
+        status = r.status_code
+        patterns = {
+            "og:image":      r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
+            "og:image(rev)": r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
+            "itemprop":      r'<meta[^>]+itemprop=["\']image["\'][^>]+content=["\'](https?://[^"\']+)',
+            "itemprop(rev)": r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+itemprop=["\']image["\']',
+            "twitter":       r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
+        }
+        results = {}
+        for name, pat in patterns.items():
+            m = _re.search(pat, full_html)
+            results[name] = m.group(1) if m else None
+        # Pirma didelė img
+        pg = _BS4(full_html, "html.parser")
+        first_img = None
+        for img in pg.find_all("img"):
+            src = img.get("src","")
+            if not src or not src.startswith("http"): continue
+            try: w = int(img.get("width","0"))
+            except: w = 0
+            if w and w < 200: continue
+            if any(x in src for x in ["logo","icon","avatar","thumb","sprite"]): continue
+            first_img = src; break
+        head_snippet = full_html[:3000]
+        return jsonify({"status": status, "patterns": results,
+                        "first_body_img": first_img, "head_snippet": head_snippet})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/tg-test", methods=["GET"])
 def tg_test():
     result = tg_send("🧪 Testas – Telegram pranešimai veikia!")
