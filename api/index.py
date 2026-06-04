@@ -151,7 +151,7 @@ def _sources(sess):
     _kv_set("sportas_sources", result)
     return result
 
-def _do_post(article, photo_path="", photo_title=""):
+def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     cat_ids  = _SPORT_CATS.get(sport, [])
     title    = article.get("title", "")
@@ -187,7 +187,9 @@ def _do_post(article, photo_path="", photo_title=""):
     rich_text = enriched.get("text", text)
     paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
     html_body = "".join(f"<p>{p}</p>" for p in paras)
-    tags_list = [t.strip() for t in ai_tags.split(",") if t.strip()] if ai_tags else []
+    # Suliejame AI tags + photo modal gaires
+    combined = ", ".join(filter(None, [ai_tags, photo_tags]))
+    tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
 
     if not SPORTAS_USER:
         return False, "SPORTAS_USER env var nenustatytas"
@@ -868,12 +870,13 @@ async function selectPhoto(path, title) {
   document.getElementById('photoModal').classList.remove('open');
   if (!_pendingPost) return;
   const {id, btn} = _pendingPost;
+  const photo_tags = document.getElementById('photoTags')?.value.trim() || '';
   _pendingPost = null;
   btn.textContent = '⏳ Įdedama...'; btn.disabled = true;
   try {
     const r = await fetch('/api/post', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({id, photo_path: path, photo_title: title})});
+      body: JSON.stringify({id, photo_path: path, photo_title: title, photo_tags})});
     const d = await r.json();
     if (d.ok) { btn.textContent = '✅ Įdėta! ' + (d.message||''); btn.classList.add('posted'); }
     else { btn.textContent = '❌ ' + (d.error || d.message || 'Klaida'); btn.disabled = false;
@@ -1129,11 +1132,12 @@ def post():
     aid         = payload.get("id", "")
     photo_path  = payload.get("photo_path", "")
     photo_title = payload.get("photo_title", "")
+    photo_tags  = payload.get("photo_tags", "")
     articles = _kv_get("articles") or []
     article  = next((a for a in articles if a["id"] == aid), None)
     if not article:
         return jsonify({"ok": False, "error": "Nerasta"}), 404
-    ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title)
+    ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title, photo_tags=photo_tags)
     return jsonify({"ok": ok, "message": msg})
 
 @app.route("/api/photos", methods=["GET"])
