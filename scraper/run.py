@@ -167,34 +167,6 @@ def fetch_rss(site: dict) -> list:
             text = html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
                 text = html_to_text(e.get("summary",""))
-            # og:image fallback saituose su og_image_fallback=True
-            if not image and url and site.get("og_image_fallback"):
-                try:
-                    import re as _re
-                    og_r = _req.get(url, headers={"User-Agent": UA}, timeout=6)
-                    full_html = og_r.text
-                    patterns = [
-                        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
-                        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
-                        r'<meta[^>]+itemprop=["\']image["\'][^>]+content=["\'](https?://[^"\']+)',
-                        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+itemprop=["\']image["\']',
-                        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
-                    ]
-                    for pat in patterns:
-                        m = _re.search(pat, full_html)
-                        if m: image = m.group(1); break
-                    if not image:
-                        pg = BeautifulSoup(full_html, "html.parser")
-                        for img in pg.find_all("img"):
-                            src = img.get("src","")
-                            if not src or not src.startswith("http"): continue
-                            try: w = int(img.get("width","0"))
-                            except: w = 0
-                            if w and w < 200: continue
-                            if any(x in src for x in ["logo","icon","avatar","thumb","sprite"]): continue
-                            image = src; break
-                except Exception:
-                    pass
             if title and url:
                 articles.append({
                     "site":site["name"], "sport":site.get("sport",""),
@@ -330,6 +302,34 @@ def main():
     # Nauji straipsniai
     new_ids = {a["id"] for a in all_articles if a["id"] not in seen_ids}
     print(f"\n📊 Iš viso: {len(all_articles)} | Naujų: {len(new_ids)}")
+
+    # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
+    import re as _re
+    _OG_FALLBACK_SITES = {s["name"] for s in SITES if s.get("og_image_fallback")}
+    _OG_PATS = [
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)',
+        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+property=["\']og:image["\']',
+        r'<meta[^>]+itemprop=["\']image["\'][^>]+content=["\'](https?://[^"\']+)',
+        r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+itemprop=["\']image["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
+    ]
+    def _fetch_og_image(art):
+        try:
+            r = _req.get(art["url"], headers={"User-Agent": UA}, timeout=4)
+            for pat in _OG_PATS:
+                m = _re.search(pat, r.text)
+                if m: return art["id"], m.group(1)
+        except: pass
+        return art["id"], None
+    arts_no_img = [a for a in all_articles if not a.get("image") and a.get("url")
+                   and a["site"] in _OG_FALLBACK_SITES]
+    if arts_no_img:
+        print(f"🖼️  og:image fallback: {len(arts_no_img)} straipsnių...")
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for aid, img in ex.map(_fetch_og_image, arts_no_img):
+                if img:
+                    for a in all_articles:
+                        if a["id"] == aid: a["image"] = img; break
 
     # Datos: naujoms be datos – fiksuojame dabar; senoms – atkuriame iš cache
     now_iso = datetime.now(timezone.utc).isoformat()
