@@ -541,17 +541,27 @@ def run_scraper():
     if dates_changed:
         _kv_set("dates_cache", dates_cache, ex=86400*30)
 
-    # Telegram – visi nauji straipsniai (ne pirmas paleidimas)
+    # Telegram – tik nauji IR ne senesni nei 24h
     if new_ids and seen_ids:
-        new_arts = [a for a in sorted_arts if a["id"] in new_ids][:5]
-        lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
-        for a in new_arts:
-            icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
-            lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
-        if len(new_ids) > 5:
-            lines.append(f"\n+{len(new_ids)-5} daugiau naujienų")
-        lines.append("\n🔗 fules-online.vercel.app")
-        tg_send("\n".join(lines))
+        tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        def _is_fresh(art):
+            d = art.get("date","")
+            if not d: return True
+            try: return parsedate_to_datetime(d) >= tg_cutoff
+            except:
+                try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
+                except: return True
+        new_arts = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)][:5]
+        if new_arts:
+            lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+            for a in new_arts:
+                icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+                lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
+            extra = len([a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]) - 5
+            if extra > 0:
+                lines.append(f"\n+{extra} daugiau naujienų")
+            lines.append("\n🔗 fules-online.vercel.app")
+            tg_send("\n".join(lines))
 
     return len(sorted_arts), len(new_ids)
 
@@ -878,19 +888,24 @@ async function _initSW() {
   if (!('serviceWorker' in navigator)) return;
   try {
     _swReg = await navigator.serviceWorker.register('/sw.js', {scope: '/'});
+    // Laukiame kol SW aktyvus
+    await navigator.serviceWorker.ready;
+    const sw = _swReg.active;
+    if (sw) sw.postMessage({type: 'INIT', key: _lastRecent});
+    // Kas 30s žadiname SW pollingui (veikia net kai tab fone)
+    setInterval(() => {
+      const s = _swReg?.active;
+      if (s) s.postMessage({type: 'POLL'});
+    }, 30000);
   } catch(e) { console.log('SW klaida:', e); }
 }
-_initSW();
 
 // Siunčia notification per SW (veikia ir fone)
 function _notify(title, body, url) {
   if (Notification.permission !== 'granted') return;
-  if (_swReg && (_swReg.active || _swReg.installing || _swReg.waiting)) {
-    const sw = _swReg.active || _swReg.waiting || _swReg.installing;
-    sw.postMessage({type: 'NOTIFY', title, body, url});
-  } else {
-    new Notification(title, {body});
-  }
+  const sw = _swReg?.active;
+  if (sw) { sw.postMessage({type: 'POLL'}); }  // SW pats aptiks ir parodys
+  else { new Notification(title, {body}); }
 }
 
 async function _checkNew() {
@@ -980,24 +995,43 @@ setInterval(_checkNew, 10000);
 # ── Service Worker ─────────────────────────────────────────────────
 _SW_JS = """
 // Sporto naujienų Service Worker
+let _swKnownKey = null;
+
+async function swPoll() {
+  try {
+    const r = await fetch('/api/articles?_sw=' + Date.now(), {cache: 'no-store'});
+    const d = await r.json();
+    const arts = d.articles || [];
+    const recentIds = d.recent_ids || [];
+    const newKey = recentIds.slice().sort().join(',') + '|' + arts.length + '|' + (arts[0]?.id||'');
+
+    if (_swKnownKey !== null && newKey !== _swKnownKey) {
+      const notifArt = recentIds.length
+        ? arts.find(a => recentIds.includes(a.id))
+        : arts[0];
+      if (notifArt) {
+        const icon = notifArt.sport === 'futbolas' ? '⚽' : '🏀';
+        await self.registration.showNotification('🏆 Sporto naujienos', {
+          body:     icon + ' ' + notifArt.title,
+          tag:      'sporto-naujienos',
+          renotify: true,
+          data:     { url: notifArt.url || 'https://fules-online.vercel.app/' },
+        });
+      }
+    }
+    _swKnownKey = newKey;
+  } catch(e) {}
+}
+
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
-// Puslapis praneša kai randa naujų straipsnių
 self.addEventListener('message', e => {
   if (!e.data) return;
-  if (e.data.type === 'NOTIFY') {
-    self.registration.showNotification(e.data.title || '🏆 Sporto naujienos', {
-      body:      e.data.body || 'Nauja naujiena!',
-      icon:      'https://fules-online.vercel.app/apple-touch-icon.png',
-      tag:       'sporto-naujienos',
-      renotify:  true,
-      data:      { url: e.data.url || 'https://fules-online.vercel.app/' },
-    });
-  }
+  if (e.data.type === 'POLL') swPoll();
+  if (e.data.type === 'INIT')  { _swKnownKey = e.data.key || null; swPoll(); }
 });
 
-// Paspaudus notification – atidaryti puslapį
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = e.notification.data?.url || 'https://fules-online.vercel.app/';

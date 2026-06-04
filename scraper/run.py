@@ -355,19 +355,27 @@ def main():
 
     print(f"✅ Išsaugota {len(sorted_arts)} straipsnių, {len(new_ids)} naujų\n")
 
-    # Telegram pranešimas – visi nauji straipsniai (ne tik per 3h)
-    # Praleidžiame jei seen_ids buvo tuščias (pirmas paleidimas)
+    # Telegram – tik nauji IR ne senesni nei 24h
     if new_ids and seen_ids:
-        new_arts = [a for a in sorted_arts if a["id"] in new_ids][:5]
-        lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
-        for a in new_arts:
-            icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
-            lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
-        if len(new_ids) > 5:
-            lines.append(f"\n+{len(new_ids)-5} daugiau naujienų")
-        lines.append("\n🔗 fules.online")
-        tg_send("\n".join(lines))
-        print(f"📨 Telegram pranešimas išsiųstas ({len(new_ids)} naujų)")
+        tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        def _is_fresh(art):
+            d = art.get("date","")
+            if not d: return True
+            try: return parsedate_to_datetime(d) >= tg_cutoff
+            except:
+                try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
+                except: return True
+        fresh_arts = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]
+        if fresh_arts:
+            lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+            for a in fresh_arts[:5]:
+                icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+                lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
+            if len(fresh_arts) > 5:
+                lines.append(f"\n+{len(fresh_arts)-5} daugiau naujienų")
+            lines.append("\n🔗 fules.online")
+            tg_send("\n".join(lines))
+            print(f"📨 Telegram pranešimas išsiųstas ({len(fresh_arts)} naujų)")
 
 
 if __name__ == "__main__":
