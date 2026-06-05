@@ -64,30 +64,32 @@ def _kv_sadd(key, *members):
 
 # ── AI praturtinimas ───────────────────────────────────────────────
 def _ai_enrich(title, text):
-    try:
-        import anthropic, re as _re
-        client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-        prompt = (
-            f"Sporto straipsnis (lietuvių k.):\nPavadinimas: {title}\n\n"
-            f"Tekstas:\n{text[:3000]}\n\n"
-            "1. Sugeneruok 1–4 temas (tagus): asmenų vardai/pavardės, klubų pavadinimai.\n"
-            "2. Tekste paboldink PIRMĄ kiekvieno asmens vardo paminėjimą "
-            "(<strong>Vardas Pavardė</strong>).\n\n"
-            "Atsakyk TIKSLIAI šiuo formatu:\nTAGS: Tag1, Tag2\nTEXT:\npilnas tekstas"
-        )
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=3000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        raw = resp.content[0].text.strip()
-        tags, enriched = "", text
-        m = _re.search(r'^TAGS:\s*(.+)$', raw, _re.MULTILINE)
-        if m: tags = m.group(1).strip()
-        m = _re.search(r'^TEXT:\s*\n(.*)', raw, _re.MULTILINE | _re.DOTALL)
-        if m: enriched = m.group(1).strip()
-        return {"tags": tags, "text": enriched}
-    except Exception as e:
-        return {"tags": "", "text": text}
+    # AI IŠJUNGTAS – pajungti kai bus ANTHROPIC_API_KEY Vercel aplinkoje
+    return {"tags": "", "text": text}
+    # try:
+    #     import anthropic, re as _re
+    #     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+    #     prompt = (
+    #         f"Sporto straipsnis (lietuvių k.):\nPavadinimas: {title}\n\n"
+    #         f"Tekstas:\n{text[:3000]}\n\n"
+    #         "1. Sugeneruok 1–4 temas (tagus): asmenų vardai/pavardės, klubų pavadinimai.\n"
+    #         "2. Tekste paboldink PIRMĄ kiekvieno asmens vardo paminėjimą "
+    #         "(<strong>Vardas Pavardė</strong>).\n\n"
+    #         "Atsakyk TIKSLIAI šiuo formatu:\nTAGS: Tag1, Tag2\nTEXT:\npilnas tekstas"
+    #     )
+    #     resp = client.messages.create(
+    #         model="claude-haiku-4-5-20251001", max_tokens=3000,
+    #         messages=[{"role": "user", "content": prompt}]
+    #     )
+    #     raw = resp.content[0].text.strip()
+    #     tags, enriched = "", text
+    #     m = _re.search(r'^TAGS:\s*(.+)$', raw, _re.MULTILINE)
+    #     if m: tags = m.group(1).strip()
+    #     m = _re.search(r'^TEXT:\s*\n(.*)', raw, _re.MULTILINE | _re.DOTALL)
+    #     if m: enriched = m.group(1).strip()
+    #     return {"tags": tags, "text": enriched}
+    # except Exception as e:
+    #     return {"tags": "", "text": text}
 
 
 # ── Sportas.lt postinimas ──────────────────────────────────────────
