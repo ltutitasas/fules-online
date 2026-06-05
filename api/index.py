@@ -151,42 +151,66 @@ def _sources(sess):
     _kv_set("sportas_sources", result)
     return result
 
+def _html_to_sportas(html_content):
+    """Konvertuoja RSS HTML į sportas.lt formatą: <b>→<strong>, <i>→<em>, išlaiko <p> struktūrą."""
+    if not html_content: return ""
+    soup = _BS4(html_content, "html.parser")
+    for t in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
+        t.decompose()
+    for tag in soup.find_all("b"): tag.name = "strong"
+    for tag in soup.find_all("i"): tag.name = "em"
+    parts = []
+    for el in soup.find_all(["p","h2","h3","h4","li"]):
+        inner = el.decode_contents().strip()
+        plain = el.get_text(strip=True)
+        if len(plain) > 4:
+            parts.append(inner)
+    return "".join(f"<p>{p}</p>" for p in parts[:60])
+
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     cat_ids  = _SPORT_CATS.get(sport, [])
     title    = article.get("title", "")
     text     = article.get("text", "")
     site     = article.get("site", "")
+    html_content = article.get("html_content", "")
 
-    # Jei tekstas tuščias – bandome gauti iš straipsnio URL
-    if not text and article.get("url"):
-        try:
-            r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
-            from bs4 import BeautifulSoup as _BSt
-            soup = _BSt(r.text, "html.parser")
-            for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
-                tag.decompose()
-            main = (soup.select_one('[class*="post-content"]') or
-                    soup.select_one('[class*="article-content"]') or
-                    soup.select_one('[class*="entry-content"]') or
-                    soup.select_one('[class*="article-body"]') or
-                    soup.select_one('[class*="prose"]') or
-                    soup.select_one('.fck') or
-                    soup.select_one('article') or
-                    soup.select_one('main'))
-            if main:
-                paras = [" ".join(el.get_text(" ", strip=True).split())
-                         for el in main.find_all(["p","h2","h3","h4"])
-                         if len(el.get_text(strip=True)) > 4]
-                text = "\n\n".join(paras[:60])
-        except:
-            pass
+    # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
+    if html_content:
+        html_body = _html_to_sportas(html_content)
+        # AI enrichment plain tekstui (tagams)
+        enriched = _ai_enrich(title, text or _html_to_text(html_content))
+        ai_tags  = enriched.get("tags", "")
+    else:
+        # Jei tekstas tuščias – bandome gauti iš straipsnio URL
+        if not text and article.get("url"):
+            try:
+                r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
+                from bs4 import BeautifulSoup as _BSt
+                soup = _BSt(r.text, "html.parser")
+                for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
+                    tag.decompose()
+                main = (soup.select_one('[class*="post-content"]') or
+                        soup.select_one('[class*="article-content"]') or
+                        soup.select_one('[class*="entry-content"]') or
+                        soup.select_one('[class*="article-body"]') or
+                        soup.select_one('[class*="prose"]') or
+                        soup.select_one('.fck') or
+                        soup.select_one('article') or
+                        soup.select_one('main'))
+                if main:
+                    paras = [" ".join(el.get_text(" ", strip=True).split())
+                             for el in main.find_all(["p","h2","h3","h4"])
+                             if len(el.get_text(strip=True)) > 4]
+                    text = "\n\n".join(paras[:60])
+            except:
+                pass
 
-    enriched  = _ai_enrich(title, text)
-    ai_tags   = enriched.get("tags", "")
-    rich_text = enriched.get("text", text)
-    paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
-    html_body = "".join(f"<p>{p}</p>" for p in paras)
+        enriched  = _ai_enrich(title, text)
+        ai_tags   = enriched.get("tags", "")
+        rich_text = enriched.get("text", text)
+        paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
+        html_body = "".join(f"<p>{p}</p>" for p in paras)
     # Suliejame AI tags + photo modal gaires
     combined = ", ".join(filter(None, [ai_tags, photo_tags]))
     tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
@@ -417,11 +441,12 @@ def _fetch_rss(site):
                         image = src
             text = _html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
+                raw_html = raw_html or e.get("summary","")
                 text = _html_to_text(e.get("summary",""))
             if title and url:
                 arts.append({"site":site["name"],"sport":site.get("sport",""),
                     "title":title,"url":url,"date":date,"image":image,
-                    "text":text,"source":"RSS","id":_art_id(url,title)})
+                    "text":text,"html_content":raw_html,"source":"RSS","id":_art_id(url,title)})
         return arts
     except: return []
 
