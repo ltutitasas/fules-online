@@ -154,11 +154,15 @@ def _sources(sess):
     return result
 
 def _html_to_sportas(html_content):
-    """Konvertuoja RSS HTML į sportas.lt formatą: <b>→<strong>, <i>→<em>, išlaiko <p> struktūrą."""
+    """Konvertuoja RSS HTML į sportas.lt formatą: <b>→<strong>, <i>→<em>, išlaiko <p> struktūrą.
+    Pašalina hyperlinks (<a>→tekstas) ir WordPress footer artefaktus."""
     if not html_content: return ""
     soup = _BS4(html_content, "html.parser")
     for t in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
         t.decompose()
+    # <a> → tik tekstas (pašaliname hyperlinks)
+    for tag in soup.find_all("a"):
+        tag.replace_with(tag.get_text())
     for tag in soup.find_all("b"): tag.name = "strong"
     for tag in soup.find_all("i"): tag.name = "em"
     parts = []
@@ -167,7 +171,11 @@ def _html_to_sportas(html_content):
         plain = el.get_text(strip=True)
         if len(plain) > 4:
             parts.append(inner)
-    return "".join(f"<p>{p}</p>" for p in parts[:60])
+    result = "".join(f"<p>{p}</p>" for p in parts[:60])
+    # Pašaliname WordPress footer: "The post X appeared first on Y."
+    import re as _re
+    result = _re.sub(r'<p>\s*The post\s+.+?appeared first on\s+.+?\.?\s*</p>', '', result, flags=_re.DOTALL | _re.IGNORECASE).strip()
+    return result
 
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
