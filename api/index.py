@@ -1265,9 +1265,10 @@ def get_photos():
 @app.route("/api/upload-photo", methods=["POST"])
 def upload_photo():
     """Parsisiunčia nuotrauką iš URL ir įkelia į sportas.lt galeriją per submitPhotos."""
+    import unicodedata as _ud
     payload = request.get_json() or {}
     image_url = payload.get("url", "")
-    tags      = payload.get("tags", "")
+    tags      = _ud.normalize("NFC", payload.get("tags", ""))
     sport     = payload.get("sport", "")
     site      = payload.get("site", "")
 
