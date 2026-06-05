@@ -1236,8 +1236,12 @@ def post():
     article  = next((a for a in articles if a["id"] == aid), None)
     if not article:
         return jsonify({"ok": False, "error": "Nerasta"}), 404
-    ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title, photo_tags=photo_tags)
-    return jsonify({"ok": ok, "message": msg, "_debug_photo_tags": photo_tags})
+    try:
+        ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title, photo_tags=photo_tags)
+        return jsonify({"ok": ok, "message": msg, "_debug_photo_tags": photo_tags})
+    except Exception as e:
+        import traceback
+        return jsonify({"ok": False, "error": str(e), "traceback": traceback.format_exc()})
 
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
@@ -1402,7 +1406,8 @@ def upload_photo():
         return jsonify({"ok": True, "path": path, "photo_id": photo_id, "source_name": source_name})
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        import traceback
+        return jsonify({"ok": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 @app.route("/api/photo-debug/<int:photo_id>", methods=["GET"])
 def photo_debug(photo_id):
