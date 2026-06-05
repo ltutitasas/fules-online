@@ -188,6 +188,8 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     text         = _nfc(article.get("text", ""))
     site         = article.get("site", "")
     html_content = _nfc(article.get("html_content", ""))
+    photo_title  = _nfc(photo_title)
+    photo_tags   = _nfc(photo_tags)
 
     # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
     if html_content:
@@ -1217,11 +1219,13 @@ def post():
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
         })
+    import unicodedata as _ud
+    _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     payload     = request.get_json() or {}
     aid         = payload.get("id", "")
     photo_path  = payload.get("photo_path", "")
-    photo_title = payload.get("photo_title", "")
-    photo_tags  = payload.get("photo_tags", "")
+    photo_title = _nfc(payload.get("photo_title", ""))
+    photo_tags  = _nfc(payload.get("photo_tags", ""))
     articles = _kv_get("articles") or []
     article  = next((a for a in articles if a["id"] == aid), None)
     if not article:
