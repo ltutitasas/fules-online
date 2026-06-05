@@ -1315,18 +1315,23 @@ def upload_photo():
         raw_name = image_url.split("?")[0].rstrip("/").split("/")[-1]
         filename = raw_name if any(raw_name.lower().endswith(e) for e in [".jpg",".jpeg",".png",".gif",".webp"]) \
                    else (raw_name or "photo") + ext
+        # HTTP headeriai turi būti ASCII – pašaliname ne-ASCII simbolius iš failvardo
+        import unicodedata as _ud3
+        filename_ascii = _ud3.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+        if not filename_ascii or filename_ascii in (".", ""):
+            filename_ascii = "photo" + ext
 
         # 2. Įkeliame į sportas.lt kaip raw octet-stream (Fine Uploader stilius)
         upload_url = (
             f"https://www.sportas.lt/Admin/Load/UGallery/submitPhotos"
-            f"?cfDontBugMe=please&qqfile={filename}&noCacheCF=1"
+            f"?cfDontBugMe=please&qqfile={filename_ascii}&noCacheCF=1"
         )
         up_r = sess.post(
             upload_url,
             data=img_r.content,
             headers={
                 "Content-Type": "application/octet-stream",
-                "X-File-Name":  filename,
+                "X-File-Name":  filename_ascii,
                 "X-Mime-Type":  ct,
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": "https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
