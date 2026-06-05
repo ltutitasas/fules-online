@@ -157,6 +157,8 @@ def _html_to_sportas(html_content):
     """Konvertuoja RSS HTML į sportas.lt formatą: <b>→<strong>, <i>→<em>, išlaiko <p> struktūrą.
     Pašalina hyperlinks (<a>→tekstas) ir WordPress footer artefaktus."""
     if not html_content: return ""
+    import unicodedata
+    html_content = unicodedata.normalize("NFC", html_content)
     soup = _BS4(html_content, "html.parser")
     for t in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
         t.decompose()
@@ -180,10 +182,12 @@ def _html_to_sportas(html_content):
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     cat_ids  = _SPORT_CATS.get(sport, [])
-    title    = article.get("title", "")
-    text     = article.get("text", "")
-    site     = article.get("site", "")
-    html_content = article.get("html_content", "")
+    import unicodedata as _ud
+    _nfc = lambda s: _ud.normalize("NFC", s) if s else s
+    title        = _nfc(article.get("title", ""))
+    text         = _nfc(article.get("text", ""))
+    site         = article.get("site", "")
+    html_content = _nfc(article.get("html_content", ""))
 
     # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
     if html_content:
