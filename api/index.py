@@ -317,10 +317,16 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     else:
         save_url = f"{_BASE}/saveArticle"
     save_url = save_url.rstrip("/")
-    r = sess.post(save_url, data=data,
+    # Priverstinai koduojame kaip UTF-8 (requests kartais naudoja latin-1 pagal sportas.lt atsakymą)
+    import unicodedata as _ud2
+    from urllib.parse import urlencode as _ue
+    data_nfc = [(k, _ud2.normalize("NFC", v) if isinstance(v, str) else v) for k, v in data]
+    data_bytes = _ue(data_nfc, doseq=True).encode("utf-8")
+    r = sess.post(save_url, data=data_bytes,
                   allow_redirects=False, timeout=30,
                   headers={"Referer": f"{_BASE}/editArticle/",
-                           "Origin": "https://www.sportas.lt"})
+                           "Origin": "https://www.sportas.lt",
+                           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"})
     location = r.headers.get("Location", "")
     if r.status_code == 302:
         if "login" in location.lower() or "check" in location.lower():
@@ -1348,10 +1354,14 @@ def upload_photo():
         }
         if photo_id:
             save_data[f"photoName[{photo_id}]"] = tags or ""
+        import unicodedata as _ud2
+        from urllib.parse import urlencode as _ue
+        save_data_nfc = {k: (_ud2.normalize("NFC", v) if isinstance(v, str) else v) for k, v in save_data.items()}
         sess.post("https://www.sportas.lt/Admin/Load/UGallery/savePhotos",
-                  data=save_data,
+                  data=_ue(save_data_nfc).encode("utf-8"),
                   headers={"Referer": "https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
-                           "Origin": "https://www.sportas.lt"},
+                           "Origin": "https://www.sportas.lt",
+                           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
                   timeout=10)
 
         # 5. Bandome rasti kelią
