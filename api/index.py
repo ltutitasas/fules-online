@@ -500,7 +500,7 @@ def _fetch_http(site):
         "User-Agent": _UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",  # br (brotli) pašalintas – requests nemoka atpakuoti
     }
     try:
         r = _req.get(site["url"], headers=_HTTP_HEADERS, timeout=8)
@@ -1606,7 +1606,7 @@ def debug_fetch():
             "User-Agent": _UA,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate",
         }, timeout=10)
         status = r.status_code
         html_len = len(r.text)
