@@ -28,9 +28,10 @@ def tg_send(text: str) -> dict:
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-_SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7], "kiti": [10, 99]}
+_SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7],
+               "ledo ritulys": [10, 99], "kitas sportas": [72, 89]}
 # Kategorijų prioriteto override: {sport: {cat_id: priority}}
-_SPORT_PRIORITIES = {"kiti": {10: "1"}}
+_SPORT_PRIORITIES = {"ledo ritulys": {10: "1"}, "kitas sportas": {72: "1"}}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
 _UA   = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -412,12 +413,18 @@ _SITES = [
      "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
     # ── Kiti ────────────────────────────────────────────────────────
-    {"name":"Hockey Lietuva", "sport":"kiti", "sportas_source":"27", "method":"http",
+    {"name":"Hockey Lietuva", "sport":"ledo ritulys", "sportas_source":"27", "method":"http",
      "url":"https://www.hockey.lt/index.php/naujienos/17",
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
+    {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
+     "url":"https://ltok.lt/naujienos",
+     "link_pattern_re": r"/naujienos/[a-z]",
+     "base_url":"https://ltok.lt",
+     "title_selector": "[style*='#287951']",
+     "text_selector": "[class*='prose']"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
@@ -507,8 +514,14 @@ def _fetch_http(site):
                 elif not any(p in href for p in patterns): continue
                 if "#" in href: continue
                 url = href if href.startswith("http") else base + (href if href.startswith("/") else "/" + href)
-                # Pirma bandome title atributą (švaresnis, be komentarų skaičiaus "(0)")
-                title = a.get("title", "").strip() or a.get_text(strip=True)
+                # title_selector – specifinis elementas su titulu (pvz. ltok.lt)
+                title_sel = site.get("title_selector", "")
+                if title_sel:
+                    tel = a.select_one(title_sel)
+                    title = tel.get_text(strip=True) if tel else ""
+                else:
+                    # Pirma bandome title atributą (švaresnis, be komentarų skaičiaus "(0)")
+                    title = a.get("title", "").strip() or a.get_text(strip=True)
                 if not title or len(title) < 5:
                     h = a.find(["h2","h3","h4"])
                     if h: title = h.get_text(strip=True)
@@ -674,7 +687,7 @@ def run_scraper():
         if new_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
             for a in new_arts:
-                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","kiti":"🏒"}
+                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
                 icon = sport_icon.get(a.get("sport",""), "🏆")
                 lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
             extra = len([a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]) - 5
@@ -810,20 +823,22 @@ function fmtDate(d) {
       year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   } catch { return d; }
 }
+const _SPORT_COLORS = {'futbolas':'#22c55e','krepšinis':'#f97316','ledo ritulys':'#38bdf8','kitas sportas':'#a78bfa'};
+const _SPORT_ICONS  = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒','kitas sportas':'🏅'};
+const _KITI_SPORTS  = new Set(['ledo ritulys','kitas sportas']);
 function renderCards() {
-  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis', kiti:'kiti'};
-  const matchSport = sportMap[curSport] || null;
   const grid = document.getElementById('grid');
   if (!ALL.length) { grid.innerHTML = '<div class="loading">Straipsnių nerasta</div>'; return; }
   let html = '';
   for (const art of ALL) {
-    const sportOk = !matchSport || art.sport === matchSport;
+    const sportOk = curSport === 'all' ||
+                    (curSport === 'kiti' ? _KITI_SPORTS.has(art.sport) : art.sport === curSport);
     const siteOk  = curSite === 'all' || art.site === curSite;
     if (!sportOk || !siteOk) continue;
     const isR  = RECENT.has(art.id);
-    const sCol = art.sport === 'futbolas' ? '#22c55e' : '#f97316';
+    const sCol = _SPORT_COLORS[art.sport] || '#94a3b8';
     const mCol = art.source === 'RSS' ? '#64748b' : (art.source === 'HTTP' ? '#3b82f6' : sCol);
-    const sIcon = art.sport === 'futbolas' ? '⚽' : '🏀';
+    const sIcon = _SPORT_ICONS[art.sport] || '🏆';
     const badge = isR ? '<span class="badge">🆕 NAUJA</span>' : '';
     const img   = art.image ? `<img src="${art.image}" loading="lazy" onerror="this.style.display='none'">` : '';
     const id    = art.id;
@@ -842,17 +857,19 @@ function renderCards() {
   const f = document.getElementById('stats');
   const fc = ALL.filter(a=>a.sport==='futbolas').length;
   const kc = ALL.filter(a=>a.sport==='krepšinis').length;
-  const oc = ALL.filter(a=>a.sport==='kiti').length;
+  const oc = ALL.filter(a=>_KITI_SPORTS.has(a.sport)).length;
   f.innerHTML = `<div class="stat"><strong>${ALL.length}</strong>Iš viso</div>
     <div class="stat"><strong style="color:#ef4444">${RECENT.size}</strong>Naujų</div>
     <div class="stat"><strong style="color:#22c55e">${fc}</strong>⚽</div>
     <div class="stat"><strong style="color:#f97316">${kc}</strong>🏀</div>
-    ${oc ? `<div class="stat"><strong style="color:#06b6d4">${oc}</strong>🏒</div>` : ''}`;
+    ${oc ? `<div class="stat"><strong style="color:#06b6d4">${oc}</strong>🏒🏅</div>` : ''}`;
 }
 function renderFilters() {
-  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis', kiti:'kiti'};
-  const ms = sportMap[curSport] || null;
-  const sites = [...new Set(ALL.filter(a => !ms || a.sport===ms).map(a=>a.site))].sort();
+  const sites = [...new Set(ALL.filter(a => {
+    if (curSport === 'all') return true;
+    if (curSport === 'kiti') return _KITI_SPORTS.has(a.sport);
+    return a.sport === curSport;
+  }).map(a=>a.site))].sort();
   let h = '<button class="filter-btn active" onclick="setSite(\\'all\\',this)">Visos</button>';
   sites.forEach(s => { h += `<button class="filter-btn" onclick="setSite('${s}',this)">${s}</button>`; });
   document.getElementById('filters').innerHTML = h;
@@ -1331,6 +1348,7 @@ def upload_photo():
         "Žalgiris":         ("57",   "zalgiris.lt nuotr."),
         "Žalgiris futbolas":("57",   "zalgiris.lt nuotr."),
         "Hockey Lietuva":   ("18",   "hockey.lt nuotr."),
+        "LTOK":             ("40",   "LTOK nuotr."),
     }
     source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:

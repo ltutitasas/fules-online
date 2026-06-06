@@ -127,12 +127,18 @@ SITES = [
                   "link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
     # ── Kiti ────────────────────────────────────────────────────────
-    {"name":"Hockey Lietuva", "sport":"kiti", "method":"http",
+    {"name":"Hockey Lietuva", "sport":"ledo ritulys", "method":"http",
      "url":"https://www.hockey.lt/index.php/naujienos/17",
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
+    {"name":"LTOK", "sport":"kitas sportas", "method":"http",
+     "url":"https://ltok.lt/naujienos",
+     "link_pattern_re": r"/naujienos/[a-z]",
+     "base_url":"https://ltok.lt",
+     "title_selector": "[style*='#287951']",
+     "text_selector": "[class*='prose']"},
 ]
 
 # ── Fetcher'iai ────────────────────────────────────────────────────
@@ -209,8 +215,14 @@ def fetch_http(site: dict) -> list:
                 elif not any(p in href for p in patterns): continue
                 if "#" in href: continue
                 url = href if href.startswith("http") else base + href
-                # Pirma bandome title atributą (švaresnis, be komentarų skaičiaus "(0)")
-                title = a.get("title", "").strip() or a.get_text(strip=True)
+                # title_selector – specifinis elementas (pvz. ltok.lt)
+                title_sel = site.get("title_selector", "")
+                if title_sel:
+                    tel = a.select_one(title_sel)
+                    title = tel.get_text(strip=True) if tel else ""
+                else:
+                    # Pirma bandome title atributą (švaresnis, be komentarų skaičiaus "(0)")
+                    title = a.get("title", "").strip() or a.get_text(strip=True)
                 if not title or len(title) < 5:
                     h = a.find(["h2","h3","h4"])
                     if h: title = h.get_text(strip=True)
@@ -430,7 +442,7 @@ def main():
         if fresh_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
             for a in fresh_arts[:5]:
-                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","kiti":"🏒"}
+                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
                 icon = sport_icon.get(a.get("sport",""), "🏆")
                 lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
             if len(fresh_arts) > 5:
