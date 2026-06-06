@@ -1627,7 +1627,8 @@ def debug_fetch():
             matches.append({"url": url, "title": title[:80]})
             if len(matches) >= 15: break
         return jsonify({"site": name, "http_status": status, "html_len": html_len,
-                        "matches": matches, "match_count": len(matches)})
+                        "matches": matches, "match_count": len(matches),
+                        "html_preview": r.text[:600]})
     except Exception as e:
         return jsonify({"site": name, "error": str(e), "trace": traceback.format_exc()[-800:]}), 500
 
