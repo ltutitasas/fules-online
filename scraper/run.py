@@ -100,6 +100,7 @@ SITES = [
      "url":"https://www.fkriteriai.lt/naujienos",
      "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
     # 🏀 KREPŠINIS – RSS
+    {"name":"BC Kibirkštis",     "sport":"krepšinis", "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
     {"name":"BC Lietkabelis",    "sport":"krepšinis", "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},

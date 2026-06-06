@@ -185,7 +185,7 @@ def _html_to_sportas(html_content):
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     site     = article.get("site", "")
-    cat_ids  = _SPORT_CATS.get(sport, [])
+    cat_ids  = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CATS.get(sport, [])
     import unicodedata as _ud
     _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     title        = _nfc(article.get("title", ""))
@@ -378,6 +378,7 @@ _SITES = [
     {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/"},
     {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/"},
     {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
+    {"name":"BC Kibirkštis",     "sport":"krepšinis", "sportas_source":"54",   "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
     {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
@@ -429,6 +430,10 @@ _SITES = [
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
 _SITE_SOURCE_OVERRIDE = {s["name"]: s["sportas_source"] for s in _SITES if s.get("sportas_source")}
+# Kategorijų override (kai saitui reikia kitų kategorijų nei numatyta pagal sportą)
+_SITE_CATS_OVERRIDE = {
+    "BC Kibirkštis": [6, 49],  # Krepšinis + Moterų krepšinis (ne LKL)
+}
 
 def _art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
@@ -1358,6 +1363,7 @@ def upload_photo():
         "Žalgiris futbolas":("57",   "zalgiris.lt nuotr."),
         "Hockey Lietuva":   ("18",   "hockey.lt nuotr."),
         "LTOK":             ("40",   "LTOK nuotr."),
+        "BC Kibirkštis":    ("2641", 'BC „Kibirkštis" nuotr.'),
     }
     source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:
