@@ -424,12 +424,11 @@ _SITES = [
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
-    {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
-     "url":"https://ltok.lt/naujienos",
-     "link_pattern_re": r"/naujienos/[a-z]",
-     "base_url":"https://ltok.lt",
-     "title_selector": "[class*='text-ellipsis']",
-     "text_selector": "[class*='prose']"},
+    # LTOK – Cloudflare 403 "Just a moment..." blokuoja Vercel ir GitHub Actions IP
+    # {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
+    #  "url":"https://ltok.lt/naujienos", "link_pattern_re": r"/naujienos/[a-z]",
+    #  "base_url":"https://ltok.lt", "title_selector": "[class*='text-ellipsis']",
+    #  "text_selector": "[class*='prose']"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
