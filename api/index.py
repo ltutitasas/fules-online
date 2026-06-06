@@ -502,7 +502,8 @@ def _fetch_http(site):
                 elif not any(p in href for p in patterns): continue
                 if "#" in href: continue
                 url = href if href.startswith("http") else base + (href if href.startswith("/") else "/" + href)
-                title = a.get_text(strip=True)
+                # Pirma bandome title atributą (švaresnis, be komentarų skaičiaus "(0)")
+                title = a.get("title", "").strip() or a.get_text(strip=True)
                 if not title or len(title) < 5:
                     h = a.find(["h2","h3","h4"])
                     if h: title = h.get_text(strip=True)
@@ -510,6 +511,8 @@ def _fetch_http(site):
                     img_in_a = a.find("img")
                     if img_in_a and img_in_a.get("alt"):
                         title = img_in_a["alt"].strip()
+                # Pašaliname komentarų skaičių " (N)" iš pavadinimo pabaigos
+                title = _re.sub(r'\s*\(\d+\)\s*$', '', title).strip()
                 if not title or len(title) < 5 or url in seen: continue
                 seen.add(url)
                 img = a.find("img")
