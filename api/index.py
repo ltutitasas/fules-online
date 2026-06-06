@@ -496,8 +496,14 @@ def _fetch_rss(site):
     except: return []
 
 def _fetch_http(site):
+    _HTTP_HEADERS = {
+        "User-Agent": _UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+    }
     try:
-        r = _req.get(site["url"], headers={"User-Agent":_UA}, timeout=5)
+        r = _req.get(site["url"], headers=_HTTP_HEADERS, timeout=8)
         if r.status_code != 200: return []
         soup = _BS4(r.text, "html.parser")
         base = site.get("base_url","")

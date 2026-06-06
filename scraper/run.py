@@ -194,8 +194,14 @@ def fetch_rss(site: dict) -> list:
 
 
 def fetch_http(site: dict) -> list:
+    _HTTP_HEADERS = {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+    }
     try:
-        r = _req.get(site["url"], headers={"User-Agent": UA}, timeout=15)
+        r = _req.get(site["url"], headers=_HTTP_HEADERS, timeout=15)
         if r.status_code != 200:
             print(f"  ⚠️  {site['name']}: HTTP {r.status_code}")
             return []
