@@ -181,12 +181,15 @@ def _html_to_sportas(html_content):
 
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
-    cat_ids  = _SPORT_CATS.get(sport, [])
+    site     = article.get("site", "")
+    # Per-site konfigūracija (cat_ids, photo_source_id override)
+    _site_cfg_post = next((s for s in _SITES if s["name"] == site), {})
+    cat_ids  = _site_cfg_post.get("cat_ids") or _SPORT_CATS.get(sport, [])
+    photo_source_id = _site_cfg_post.get("photo_source_id", "")
     import unicodedata as _ud
     _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     title        = _nfc(article.get("title", ""))
     text         = _nfc(article.get("text", ""))
-    site         = article.get("site", "")
     html_content = _nfc(article.get("html_content", ""))
     photo_title  = _nfc(photo_title)
     photo_tags   = _nfc(photo_tags)
@@ -286,6 +289,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         ("titleSlug",""),("title",title),("extraTitle",""),("facebookTitle",""),
         ("generatedTV3Title",""),("intro",""),("text",html_body),
         ("leadPhoto[path]", photo_path),("leadPhoto[title]", photo_title),("leadPhoto[size]","l"),
+        ("leadPhoto[source]", photo_source_id),
         ("cropSize","l"),("leadLiveVideoTime[endDate]",""),("leadLiveVideoTime[endTime]",""),
         ("leadPlayVideo[code]",""),("leadPlayVideo[playId]",""),("leadVideo[url]",""),
         ("attachCustomJs[]",""),("attachFbPost[]",""),
@@ -407,12 +411,14 @@ _SITES = [
      "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
     # ── Kiti ────────────────────────────────────────────────────────
-    {"name":"Hockey Lietuva", "sport":"kiti", "sportas_source":"1", "method":"http",
+    {"name":"Hockey Lietuva", "sport":"kiti", "sportas_source":"27", "method":"http",
      "url":"https://www.hockey.lt/index.php/naujienos/17",
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
-     "text_selector":".short_text"},
+     "text_selector":".short_text",
+     "cat_ids": [10, 99],
+     "photo_source_id": "18"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
