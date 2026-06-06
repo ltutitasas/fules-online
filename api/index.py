@@ -1587,6 +1587,39 @@ def tg_test():
                     "token_set": bool(TG_TOKEN),
                     "chat_set": bool(TG_CHAT)})
 
+@app.route("/api/debug-fetch", methods=["GET"])
+def debug_fetch():
+    """Testuoja _fetch_http konkrečiai svetainei ir grąžina rezultatus arba klaidą."""
+    import traceback
+    name = request.args.get("site", "LTOK")
+    site = next((s for s in _SITES if s["name"] == name), None)
+    if not site:
+        return jsonify({"error": f"Site '{name}' not found", "sites": [s["name"] for s in _SITES]}), 404
+    try:
+        r = _req.get(site["url"], headers={"User-Agent": _UA}, timeout=10)
+        status = r.status_code
+        html_len = len(r.text)
+        from bs4 import BeautifulSoup as _BSd
+        import re as _red
+        soup = _BSd(r.text, "html.parser")
+        base = site.get("base_url", "")
+        pat_re = _red.compile(site["link_pattern_re"]) if "link_pattern_re" in site else None
+        title_sel = site.get("title_selector", "")
+        matches = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if pat_re and not pat_re.search(href): continue
+            if "#" in href: continue
+            url = href if href.startswith("http") else base + (href if href.startswith("/") else "/" + href)
+            tel = a.select_one(title_sel) if title_sel else None
+            title = tel.get_text(strip=True) if tel else a.get_text(strip=True)[:60]
+            matches.append({"url": url, "title": title[:80]})
+            if len(matches) >= 15: break
+        return jsonify({"site": name, "http_status": status, "html_len": html_len,
+                        "matches": matches, "match_count": len(matches)})
+    except Exception as e:
+        return jsonify({"site": name, "error": str(e), "trace": traceback.format_exc()[-800:]}), 500
+
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
     """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""
