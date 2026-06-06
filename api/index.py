@@ -28,7 +28,7 @@ def tg_send(text: str) -> dict:
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-_SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7]}
+_SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7], "kiti": [10, 99]}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
 _UA   = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -182,10 +182,7 @@ def _html_to_sportas(html_content):
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     site     = article.get("site", "")
-    # Per-site konfigūracija (cat_ids, photo_source_id override)
-    _site_cfg_post = next((s for s in _SITES if s["name"] == site), {})
-    cat_ids  = _site_cfg_post.get("cat_ids") or _SPORT_CATS.get(sport, [])
-    photo_source_id = _site_cfg_post.get("photo_source_id", "")
+    cat_ids  = _SPORT_CATS.get(sport, [])
     import unicodedata as _ud
     _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     title        = _nfc(article.get("title", ""))
@@ -289,7 +286,6 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         ("titleSlug",""),("title",title),("extraTitle",""),("facebookTitle",""),
         ("generatedTV3Title",""),("intro",""),("text",html_body),
         ("leadPhoto[path]", photo_path),("leadPhoto[title]", photo_title),("leadPhoto[size]","l"),
-        ("leadPhoto[source]", photo_source_id),
         ("cropSize","l"),("leadLiveVideoTime[endDate]",""),("leadLiveVideoTime[endTime]",""),
         ("leadPlayVideo[code]",""),("leadPlayVideo[playId]",""),("leadVideo[url]",""),
         ("attachCustomJs[]",""),("attachFbPost[]",""),
@@ -416,9 +412,7 @@ _SITES = [
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
-     "text_selector":".short_text",
-     "cat_ids": [10, 99],
-     "photo_source_id": "18"},
+     "text_selector":".short_text"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
@@ -1331,6 +1325,7 @@ def upload_photo():
         "FK Žalgiris":      ("11",   "fkzalgiris.lt nuotr."),
         "Žalgiris":         ("57",   "zalgiris.lt nuotr."),
         "Žalgiris futbolas":("57",   "zalgiris.lt nuotr."),
+        "Hockey Lietuva":   ("18",   "hockey.lt nuotr."),
     }
     source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:
