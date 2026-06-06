@@ -16,9 +16,16 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 
 _HTTP_HEADERS = {
     "User-Agent": UA,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "lt-LT,lt;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
 }
 
 SITE = {
@@ -64,7 +71,9 @@ def tg_send(text):
 
 def fetch_ltok():
     r = _req.get(SITE["url"], headers=_HTTP_HEADERS, timeout=15)
-    r.raise_for_status()
+    if r.status_code != 200:
+        print(f"  ⚠️  HTTP {r.status_code} – praleidžiama")
+        return []
     soup = BeautifulSoup(r.text, "html.parser")
     pat = re.compile(SITE["link_pattern_re"])
     seen_urls_local = set()
@@ -104,8 +113,13 @@ def main():
                 if a["id"] not in seen_ids and a.get("url","") not in seen_urls]
     print(f"  Nauji: {len(new_arts)}")
 
+    # Atnaujiname KV articles (pridedame prie esamo sąrašo arba tiesiog atnaujinome TTL)
+    existing = kv_get("articles") or []
+    merged = new_arts + [a for a in existing if a["id"] not in {x["id"] for x in new_arts}]
+    kv_set("articles", merged[:300], ex=86400*2)  # visada rašome – TTL atsinaujina
+
     if not new_arts:
-        print("  Nieko naujo.")
+        print("  Nieko naujo (articles TTL atnaujintas).")
         return
 
     # Išsaugome first_seen
@@ -117,12 +131,6 @@ def main():
             changed = True
     if changed:
         kv_set("first_seen", first_seen, ex=86400*30)
-
-    # Atnaujiname KV articles (pridedame prie esamo sąrašo)
-    existing = kv_get("articles") or []
-    existing_ids = {a["id"] for a in existing}
-    merged = new_arts + [a for a in existing if a["id"] not in {x["id"] for x in new_arts}]
-    kv_set("articles", merged[:300], ex=86400*2)
 
     # Žymime kaip matytus
     kv_sadd("seen_ids",  *[a["id"]  for a in new_arts])

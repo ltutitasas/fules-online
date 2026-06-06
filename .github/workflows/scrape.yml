@@ -1,6 +1,8 @@
 name: Scrape naujienos
 
 on:
+  schedule:
+    - cron: '*/20 * * * *'
   workflow_dispatch:
 
 jobs:
