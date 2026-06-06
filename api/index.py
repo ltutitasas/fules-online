@@ -29,6 +29,8 @@ def tg_send(text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 _SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7], "kiti": [10, 99]}
+# Kategorijų prioriteto override: {sport: {cat_id: priority}}
+_SPORT_PRIORITIES = {"kiti": {10: "1"}}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
 _UA   = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -294,6 +296,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     for cid in cat_ids: data.append(("categories[]", str(cid)))
     # Siunčiame priority[] visiems kategorijų ID (kaip realus naršyklė)
     for cid in _ALL_CAT_IDS: data.append((f"priority[{cid}]", "1000"))
+    # Prioriteto override pagal sportą (pvz. kiti → Ledo ritulys cat 10 = 1)
+    for cat_id, priority in _SPORT_PRIORITIES.get(sport, {}).items():
+        data.append((f"priority[{cat_id}]", priority))
     data += [
         ("source",str(source_id)),("realSource","0"),("realSource","0"),
         ("disableComments","0"),("commentsForUsers","0"),("isLiveNews","0"),("tags",""),
