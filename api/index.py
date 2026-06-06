@@ -419,12 +419,8 @@ _SITES = [
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
-    {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
-     "url":"https://ltok.lt/naujienos",
-     "link_pattern_re": r"/naujienos/[a-z]",
-     "base_url":"https://ltok.lt",
-     "title_selector": "[class*='text-ellipsis']",
-     "text_selector": "[class*='prose']"},
+    # LTOK: scrapiname per GitHub Actions (ltok.yml) – Cloudflare blokuoja Vercel IP
+    # {"name":"LTOK", ...} -> scraper/ltok.py
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
@@ -1602,7 +1598,12 @@ def debug_fetch():
     if not site:
         return jsonify({"error": f"Site '{name}' not found", "sites": [s["name"] for s in _SITES]}), 404
     try:
-        r = _req.get(site["url"], headers={"User-Agent": _UA}, timeout=10)
+        r = _req.get(site["url"], headers={
+            "User-Agent": _UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "lt-LT,lt;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+        }, timeout=10)
         status = r.status_code
         html_len = len(r.text)
         from bs4 import BeautifulSoup as _BSd

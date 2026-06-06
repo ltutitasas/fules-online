@@ -1,0 +1,30 @@
+name: Scrape LTOK
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Įdiegti priklausomybes
+        run: pip install requests beautifulsoup4
+
+      - name: Paleisti LTOK scraperį
+        env:
+          KV_REST_API_URL:      ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN:    ${{ secrets.KV_REST_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scraper/ltok.py
