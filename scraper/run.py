@@ -131,7 +131,8 @@ SITES = [
      "url":"https://www.hockey.lt/index.php/naujienos/17",
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
-     "og_image_fallback": True, "image_selector":".news_item_img img"},
+     "og_image_fallback": True, "image_selector":".news_item_img img",
+     "text_selector":".short_text"},
 ]
 
 # ── Fetcher'iai ────────────────────────────────────────────────────
@@ -228,6 +229,7 @@ def fetch_http(site: dict) -> list:
                     "site":site["name"], "sport":site.get("sport",""),
                     "title":title, "url":url, "date":"", "image":image, "text":"",
                     "source":"HTTP", "id":art_id(url,title),
+                    "text_selector":site.get("text_selector",""),
                 })
                 if len(articles) >= MAX: break
 

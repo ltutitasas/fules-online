@@ -206,18 +206,21 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                 soup = _BSt(r.text, "html.parser")
                 for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
                     tag.decompose()
-                main = (soup.select_one('[class*="post-content"]') or
-                        soup.select_one('[class*="article-content"]') or
-                        soup.select_one('[class*="entry-content"]') or
-                        soup.select_one('[class*="article-body"]') or
-                        soup.select_one('[class*="prose"]') or
-                        soup.select_one('.fck') or
-                        soup.select_one('article') or
-                        soup.select_one('main'))
+                # Pirma bandome site-specific text_selector
+                txt_sel = article.get("text_selector", "")
+                main = (soup.select_one(txt_sel) if txt_sel else None) or \
+                       soup.select_one('[class*="post-content"]') or \
+                       soup.select_one('[class*="article-content"]') or \
+                       soup.select_one('[class*="entry-content"]') or \
+                       soup.select_one('[class*="article-body"]') or \
+                       soup.select_one('[class*="prose"]') or \
+                       soup.select_one('.fck') or \
+                       soup.select_one('article') or \
+                       soup.select_one('main')
                 if main:
                     paras = [" ".join(el.get_text(" ", strip=True).split())
-                             for el in main.find_all(["p","h2","h3","h4"])
-                             if len(el.get_text(strip=True)) > 4]
+                             for el in main.find_all(["p","h2","h3","h4","div"])
+                             if len(el.get_text(strip=True)) > 10]
                     text = "\n\n".join(paras[:60])
             except:
                 pass
@@ -407,7 +410,8 @@ _SITES = [
      "url":"https://www.hockey.lt/index.php/naujienos/17",
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
-     "og_image_fallback": True, "image_selector":".news_item_img img"},
+     "og_image_fallback": True, "image_selector":".news_item_img img",
+     "text_selector":".short_text"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
@@ -514,7 +518,8 @@ def _fetch_http(site):
                     image = (base+src if src.startswith("/") else src) or None
                 arts.append({"site":site["name"],"sport":site.get("sport",""),
                     "title":title,"url":url,"date":"","image":image,
-                    "text":"","source":"HTTP","id":_art_id(url,title)})
+                    "text":"","source":"HTTP","id":_art_id(url,title),
+                    "text_selector":site.get("text_selector","")})
                 if len(arts) >= _MAX: break
         elif "selectors" in site:
             sel = site["selectors"]
