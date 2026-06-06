@@ -1190,22 +1190,36 @@ def article_text():
         for tag in soup(["script","style","nav","footer","header","aside",
                          "iframe","noscript","form","button"]):
             tag.decompose()
+        # Ieškome site-specific text_selector iš _SITES konfigūracijos
+        site_cfg = next((s for s in _SITES
+                         if s.get("base_url") and url.startswith(s["base_url"])), {})
+        txt_sel = site_cfg.get("text_selector", "")
         # Ieškome turinio konteinerio - nuo konkretesnių iki bendresnių
-        main = (soup.select_one('[class*="post-content"]') or
-                soup.select_one('[class*="article-content"]') or
-                soup.select_one('[class*="entry-content"]') or
-                soup.select_one('[class*="article-body"]') or
-                soup.select_one('[class*="prose"]') or
-                soup.select_one('.fck') or
-                soup.select_one('article') or
-                soup.select_one('main') or
-                soup.body)
+        main = (soup.select_one(txt_sel) if txt_sel else None) or \
+               soup.select_one('[class*="post-content"]') or \
+               soup.select_one('[class*="article-content"]') or \
+               soup.select_one('[class*="entry-content"]') or \
+               soup.select_one('[class*="article-body"]') or \
+               soup.select_one('[class*="prose"]') or \
+               soup.select_one('.fck') or \
+               soup.select_one('article') or \
+               soup.select_one('main')
         paragraphs = []
+        seen_txts = set()
         if main:
-            for el in main.find_all(["p", "h2", "h3", "h4", "li"]):
-                txt = el.get_text(" ", strip=True)
-                txt = " ".join(txt.split())
-                if len(txt) > 4:
+            # Jei text_selector rasta – įtraukiame ir div (pvz. hockey.lt naudoja div)
+            tags = ["p","h2","h3","h4","li","div"] if txt_sel else ["p","h2","h3","h4","li"]
+            for el in main.find_all(tags):
+                txt = " ".join(el.get_text(" ", strip=True).split())
+                if len(txt) > 10 and txt not in seen_txts:
+                    seen_txts.add(txt)
+                    paragraphs.append(txt)
+        if not paragraphs:
+            # Paskutinis fallback: body su p tagais (be div, vengiam footer)
+            for el in (soup.body or soup).find_all(["p","h2","h3","h4","li"]):
+                txt = " ".join(el.get_text(" ", strip=True).split())
+                if len(txt) > 10 and txt not in seen_txts:
+                    seen_txts.add(txt)
                     paragraphs.append(txt)
         text = _strip_wp_footer("\n\n".join(paragraphs))
         return jsonify({"text": text[:30000]})
