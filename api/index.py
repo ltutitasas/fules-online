@@ -206,8 +206,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                 soup = _BSt(r.text, "html.parser")
                 for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
                     tag.decompose()
-                # Pirma bandome site-specific text_selector
-                txt_sel = article.get("text_selector", "")
+                # Pirma bandome site-specific text_selector (iš article dict arba _SITES config)
+                _site_cfg = next((s for s in _SITES if s["name"] == site), {})
+                txt_sel = article.get("text_selector", "") or _site_cfg.get("text_selector", "")
                 main = (soup.select_one(txt_sel) if txt_sel else None) or \
                        soup.select_one('[class*="post-content"]') or \
                        soup.select_one('[class*="article-content"]') or \
