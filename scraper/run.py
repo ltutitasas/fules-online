@@ -126,6 +126,12 @@ SITES = [
      "selectors":{"articles":"div.news-list-post","title":"h4 a",
                   "link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
+    # ── Kiti ────────────────────────────────────────────────────────
+    {"name":"Hockey Lietuva", "sport":"kiti", "method":"http",
+     "url":"https://www.hockey.lt/index.php/naujienos/17",
+     "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
+     "base_url":"https://www.hockey.lt",
+     "og_image_fallback": True, "image_selector":".news_item_img img"},
 ]
 
 # ── Fetcher'iai ────────────────────────────────────────────────────
@@ -419,7 +425,8 @@ def main():
         if fresh_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
             for a in fresh_arts[:5]:
-                icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","kiti":"🏒"}
+                icon = sport_icon.get(a.get("sport",""), "🏆")
                 lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
             if len(fresh_arts) > 5:
                 lines.append(f"\n+{len(fresh_arts)-5} daugiau naujienų")

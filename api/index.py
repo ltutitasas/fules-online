@@ -402,6 +402,12 @@ _SITES = [
      "url":"https://bcjonavahipocredit.lt/naujienos/",
      "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
      "base_url":"https://bcjonavahipocredit.lt"},
+    # ── Kiti ────────────────────────────────────────────────────────
+    {"name":"Hockey Lietuva", "sport":"kiti", "sportas_source":"1", "method":"http",
+     "url":"https://www.hockey.lt/index.php/naujienos/17",
+     "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
+     "base_url":"https://www.hockey.lt",
+     "og_image_fallback": True, "image_selector":".news_item_img img"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
@@ -654,7 +660,8 @@ def run_scraper():
         if new_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
             for a in new_arts:
-                icon = "⚽" if a.get("sport") == "futbolas" else "🏀"
+                sport_icon = {"futbolas":"⚽","krepšinis":"🏀","kiti":"🏒"}
+                icon = sport_icon.get(a.get("sport",""), "🏆")
                 lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
             extra = len([a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]) - 5
             if extra > 0:
@@ -741,6 +748,7 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
   <button class="sport-tab active-all" onclick="setSport('all',this)">Visos</button>
   <button class="sport-tab" onclick="setSport('futbolas',this)">⚽ Futbolas</button>
   <button class="sport-tab" onclick="setSport('krepsinys',this)">🏀 Krepšinis</button>
+  <button class="sport-tab" onclick="setSport('kiti',this)">🏒 Kiti</button>
 </div>
 <div class="stats" id="stats"></div>
 <div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px">
@@ -789,7 +797,7 @@ function fmtDate(d) {
   } catch { return d; }
 }
 function renderCards() {
-  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis'};
+  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis', kiti:'kiti'};
   const matchSport = sportMap[curSport] || null;
   const grid = document.getElementById('grid');
   if (!ALL.length) { grid.innerHTML = '<div class="loading">Straipsnių nerasta</div>'; return; }
@@ -820,13 +828,15 @@ function renderCards() {
   const f = document.getElementById('stats');
   const fc = ALL.filter(a=>a.sport==='futbolas').length;
   const kc = ALL.filter(a=>a.sport==='krepšinis').length;
+  const oc = ALL.filter(a=>a.sport==='kiti').length;
   f.innerHTML = `<div class="stat"><strong>${ALL.length}</strong>Iš viso</div>
     <div class="stat"><strong style="color:#ef4444">${RECENT.size}</strong>Naujų</div>
     <div class="stat"><strong style="color:#22c55e">${fc}</strong>⚽</div>
-    <div class="stat"><strong style="color:#f97316">${kc}</strong>🏀</div>`;
+    <div class="stat"><strong style="color:#f97316">${kc}</strong>🏀</div>
+    ${oc ? `<div class="stat"><strong style="color:#06b6d4">${oc}</strong>🏒</div>` : ''}`;
 }
 function renderFilters() {
-  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis'};
+  const sportMap = {futbolas:'futbolas', krepsinys:'krepšinis', kiti:'kiti'};
   const ms = sportMap[curSport] || null;
   const sites = [...new Set(ALL.filter(a => !ms || a.sport===ms).map(a=>a.site))].sort();
   let h = '<button class="filter-btn active" onclick="setSite(\\'all\\',this)">Visos</button>';
