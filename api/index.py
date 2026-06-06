@@ -424,8 +424,12 @@ _SITES = [
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
-    # LTOK: scrapiname per GitHub Actions (ltok.yml) – Cloudflare blokuoja Vercel IP
-    # {"name":"LTOK", ...} -> scraper/ltok.py
+    {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
+     "url":"https://ltok.lt/naujienos",
+     "link_pattern_re": r"/naujienos/[a-z]",
+     "base_url":"https://ltok.lt",
+     "title_selector": "[class*='text-ellipsis']",
+     "text_selector": "[class*='prose']"},
 ]
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
