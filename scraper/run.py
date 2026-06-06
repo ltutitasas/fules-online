@@ -137,7 +137,7 @@ SITES = [
      "url":"https://ltok.lt/naujienos",
      "link_pattern_re": r"/naujienos/[a-z]",
      "base_url":"https://ltok.lt",
-     "title_selector": "[style*='#287951']",
+     "title_selector": "[class*='text-ellipsis']",
      "text_selector": "[class*='prose']"},
 ]
 

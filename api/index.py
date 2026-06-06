@@ -423,7 +423,7 @@ _SITES = [
      "url":"https://ltok.lt/naujienos",
      "link_pattern_re": r"/naujienos/[a-z]",
      "base_url":"https://ltok.lt",
-     "title_selector": "[style*='#287951']",
+     "title_selector": "[class*='text-ellipsis']",
      "text_selector": "[class*='prose']"},
 ]
 
@@ -826,13 +826,20 @@ function fmtDate(d) {
 const _SPORT_COLORS = {'futbolas':'#22c55e','krepšinis':'#f97316','ledo ritulys':'#38bdf8','kitas sportas':'#a78bfa'};
 const _SPORT_ICONS  = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒','kitas sportas':'🏅'};
 const _KITI_SPORTS  = new Set(['ledo ritulys','kitas sportas']);
+// Konvertuojame URL-friendly sport key į tikrą sport reikšmę
+const _SPORT_MAP = {'futbolas':'futbolas','krepsinys':'krepšinis','kiti':'kiti','all':'all'};
+function _matchSport(artSport) {
+  if (curSport === 'all') return true;
+  if (curSport === 'kiti') return _KITI_SPORTS.has(artSport);
+  const mapped = _SPORT_MAP[curSport] || curSport;
+  return artSport === mapped;
+}
 function renderCards() {
   const grid = document.getElementById('grid');
   if (!ALL.length) { grid.innerHTML = '<div class="loading">Straipsnių nerasta</div>'; return; }
   let html = '';
   for (const art of ALL) {
-    const sportOk = curSport === 'all' ||
-                    (curSport === 'kiti' ? _KITI_SPORTS.has(art.sport) : art.sport === curSport);
+    const sportOk = _matchSport(art.sport);
     const siteOk  = curSite === 'all' || art.site === curSite;
     if (!sportOk || !siteOk) continue;
     const isR  = RECENT.has(art.id);
@@ -865,11 +872,7 @@ function renderCards() {
     ${oc ? `<div class="stat"><strong style="color:#06b6d4">${oc}</strong>🏒🏅</div>` : ''}`;
 }
 function renderFilters() {
-  const sites = [...new Set(ALL.filter(a => {
-    if (curSport === 'all') return true;
-    if (curSport === 'kiti') return _KITI_SPORTS.has(a.sport);
-    return a.sport === curSport;
-  }).map(a=>a.site))].sort();
+  const sites = [...new Set(ALL.filter(a => _matchSport(a.sport)).map(a=>a.site))].sort();
   let h = '<button class="filter-btn active" onclick="setSite(\\'all\\',this)">Visos</button>';
   sites.forEach(s => { h += `<button class="filter-btn" onclick="setSite('${s}',this)">${s}</button>`; });
   document.getElementById('filters').innerHTML = h;
