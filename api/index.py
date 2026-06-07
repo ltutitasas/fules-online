@@ -222,18 +222,25 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                        soup.select_one('article') or \
                        soup.select_one('main')
                 if main:
-                    paras = [" ".join(el.get_text(" ", strip=True).split())
-                             for el in main.find_all(["p","h2","h3","h4","div"])
-                             if len(el.get_text(strip=True)) > 10]
-                    text = "\n\n".join(paras[:60])
+                    # Naudojame _html_to_sportas – išsaugo <strong>, <em> formatavimą
+                    html_body = _html_to_sportas(str(main))
+                    # Plain tekstas tik AI tagams
+                    paras_plain = [" ".join(el.get_text(" ", strip=True).split())
+                                   for el in main.find_all(["p","h2","h3","h4"])
+                                   if len(el.get_text(strip=True)) > 10]
+                    text = "\n\n".join(paras_plain[:60])
             except:
                 pass
 
-        enriched  = _ai_enrich(title, text)
-        ai_tags   = enriched.get("tags", "")
-        rich_text = enriched.get("text", text)
-        paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
-        html_body = "".join(f"<p>{p}</p>" for p in paras)
+        if not html_body:
+            enriched  = _ai_enrich(title, text)
+            ai_tags   = enriched.get("tags", "")
+            rich_text = enriched.get("text", text)
+            paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
+            html_body = "".join(f"<p>{p}</p>" for p in paras)
+        else:
+            enriched = _ai_enrich(title, text)
+            ai_tags  = enriched.get("tags", "")
     # Suliejame AI tags + photo modal gaires
     combined = ", ".join(filter(None, [ai_tags, photo_tags]))
     tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
