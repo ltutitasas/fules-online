@@ -79,7 +79,7 @@ SITES = [
     {"name":"FC Džiugas",     "sport":"futbolas",  "rss":"https://www.fcdziugas.lt/feed/"},
     {"name":"FC Hegelmann",   "sport":"futbolas",  "rss":"https://fchegelmann.com/feed/", "og_image_fallback": True},
     {"name":"FK Panevėžys",   "sport":"futbolas",  "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
-    {"name":"FK Sūduva",      "sport":"futbolas",  "rss":"https://fksuduva.lt/feed/"},
+    {"name":"FK Sūduva",      "sport":"futbolas",  "rss":"https://fksuduva.lt/feed/", "og_image_fallback": True, "image_selector": ".post-featured-image img"},
     {"name":"FK TransINVEST", "sport":"futbolas",  "rss":"https://fktransinvest.lt/feed/"},
     {"name":"FA Šiauliai",    "sport":"futbolas",  "rss":"https://siauliufa.lt/feed/", "og_image_fallback": True, "image_selector": ".elementor-post__thumbnail img"},
     {"name":"FK Žalgiris",    "sport":"futbolas",  "rss":"https://fkzalgiris.lt/feed/"},
