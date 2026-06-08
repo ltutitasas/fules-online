@@ -382,7 +382,7 @@ _SITES = [
     {"name":"FK Panevėžys",      "sport":"futbolas",  "sportas_source":"1029", "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
     {"name":"FK Sūduva",         "sport":"futbolas",  "sportas_source":"118",  "rss":"https://fksuduva.lt/feed/"},
     {"name":"FK TransINVEST",    "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fktransinvest.lt/feed/"},
-    {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/"},
+    {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/", "og_image_fallback": True, "image_selector": ".elementor-post__thumbnail img"},
     {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/"},
     {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
     {"name":"BC Kibirkštis",     "sport":"krepšinis", "sportas_source":"54",   "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True, "text_selector":".entry-summary"},
