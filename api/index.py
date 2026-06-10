@@ -443,7 +443,8 @@ _SITES = [
 _SITE_SOURCE_OVERRIDE = {s["name"]: s["sportas_source"] for s in _SITES if s.get("sportas_source")}
 # Kategorijų override (kai saitui reikia kitų kategorijų nei numatyta pagal sportą)
 _SITE_CATS_OVERRIDE = {
-    "BC Kibirkštis": [6, 49],  # Krepšinis + Moterų krepšinis (ne LKL)
+    "BC Kibirkštis":    [6, 49],   # Krepšinis + Moterų krepšinis (ne LKL)
+    "Lengvoji atletika":[72, 88],  # Kitas sportas + Lengvoji atletika
 }
 
 def _art_id(url, title):
