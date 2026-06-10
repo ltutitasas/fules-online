@@ -625,7 +625,7 @@ def run_scraper(mode="all"):
     ]
     def _fetch_og_image(art):
         try:
-            r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=4)
+            r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=2 if mode=="rss" else 4)
             html = r.text
             # 1. og:image / itemprop / twitter:image meta
             for pat in _OG_PATS:
