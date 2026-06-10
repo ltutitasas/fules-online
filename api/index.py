@@ -1101,15 +1101,16 @@ async function _checkNew() {
       ALL = arts; RECENT = new Set(recentIds);
       document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
-      // Notification: pirmiausia recent, o jei nėra – pirmasis naujas
+      // Notification: siųsti tik jei ši kortelė pirma pamatė (multi-tab apsauga)
+      const alreadyNotified = localStorage.getItem('lastSeenRecent') === newKey;
+      localStorage.setItem('lastSeenRecent', newKey);  // iš karto – kitos kortelės matys
       const notifArt = recentIds.length
         ? ALL.find(a => recentIds.includes(a.id))
         : arts[0];
-      if (notifArt && hadRecent) {
+      if (notifArt && hadRecent && !alreadyNotified) {
         const icon = notifArt.sport === 'futbolas' ? '⚽' : '🏀';
         _notify('🏆 Sporto naujienos', icon + ' ' + notifArt.title, notifArt.url || '/');
       }
-      localStorage.setItem('lastSeenRecent', recentIds.sort().join(','));
     }
     _lastRecent = newKey;
   } catch {}
