@@ -393,6 +393,7 @@ _SITES = [
     {"name":"Lietuva Basketball","sport":"krepšinis", "sportas_source":"1034", "rss":"https://lietuva.basketball/feed/"},
     {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/", "og_image_fallback": True, "image_selector": ".article .image img"},
     {"name":"Lengvoji atletika", "sport":"kitas sportas", "sportas_source":"17",   "rss":"https://lengvoji.lt/feed/", "og_image_fallback": True},
+    {"name":"LTU Aquatics",      "sport":"kitas sportas", "sportas_source":"1",    "rss":"https://ltuaquatics.com/feed/", "og_image_fallback": True},
     {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http",
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
@@ -444,8 +445,9 @@ _SITE_SOURCE_OVERRIDE = {s["name"]: s["sportas_source"] for s in _SITES if s.get
 # Kategorijų override (kai saitui reikia kitų kategorijų nei numatyta pagal sportą)
 _SITE_CATS_OVERRIDE = {
     "BC Kibirkštis":      [6, 49],    # Krepšinis + Moterų krepšinis (ne LKL)
-    "Lengvoji atletika":  [72, 88],   # Kitas sportas + Lengvoji atletika
+    "Lengvoji atletika":  [72, 88],    # Kitas sportas + Lengvoji atletika
     "Lietuva Basketball": [6, 137],   # Krepšinis + Lietuvos rinktinės
+    "LTU Aquatics":       [15, 16],   # Vandens sportas + Plaukimas
 }
 
 def _art_id(url, title):
@@ -1406,6 +1408,7 @@ def upload_photo():
         "Hockey Lietuva":   ("18",   "hockey.lt nuotr."),
         "LTOK":             ("40",   "LTOK nuotr."),
         "BC Kibirkštis":    ("2641", 'BC „Kibirkštis" nuotr.'),
+        "LTU Aquatics":     ("2730", "ltuswimming.com nuotr."),
     }
     source_id, source_name = _SOURCE_MAP.get(site, ("3", "Organizatorių nuotr."))
     if not image_url:
