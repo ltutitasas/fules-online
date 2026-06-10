@@ -1093,26 +1093,29 @@ async function _checkNew() {
     const d = await r.json();
     const arts = d.articles || [];
     const recentIds = d.recent_ids || [];
-    // Sekame: recent_ids + bendras skaičius + pirmo straipsnio ID
-    const newKey = recentIds.sort().join(',') + '|' + arts.length + '|' + (arts[0]?.id||'');
+    const recentKey = recentIds.slice().sort().join(',');                        // tik nauji ID
+    const fullKey   = recentKey + '|' + arts.length + '|' + (arts[0]?.id||''); // UI stebėjimui
     const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
-    if (newKey !== _lastRecent && _lastRecent !== '') {
-      const hadRecent = ALL.length > 0;
+    if (fullKey !== _lastRecent && _lastRecent !== '') {
       ALL = arts; RECENT = new Set(recentIds);
       document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
-      // Notification: siųsti tik jei ši kortelė pirma pamatė (multi-tab apsauga)
-      const alreadyNotified = localStorage.getItem('lastSeenRecent') === newKey;
-      localStorage.setItem('lastSeenRecent', newKey);  // iš karto – kitos kortelės matys
-      const notifArt = recentIds.length
-        ? ALL.find(a => recentIds.includes(a.id))
-        : arts[0];
-      if (notifArt && hadRecent && !alreadyNotified) {
-        const icon = notifArt.sport === 'futbolas' ? '⚽' : '🏀';
-        _notify('🏆 Sporto naujienos', icon + ' ' + notifArt.title, notifArt.url || '/');
+      // Notification TIKAI kai recent_ids pasikeitė – ne kai HTTP scraperis
+      // tik perstumia straipsnių sąrašą (arts.length / arts[0] pasikeičia)
+      const prevRecentKey = _lastRecent.split('|')[0];
+      if (recentKey && recentKey !== prevRecentKey) {
+        const alreadyNotified = localStorage.getItem('lastNotifiedRecent') === recentKey;
+        localStorage.setItem('lastNotifiedRecent', recentKey); // iš karto – multi-tab apsauga
+        if (!alreadyNotified) {
+          const notifArt = ALL.find(a => recentIds.includes(a.id)) || arts[0];
+          if (notifArt) {
+            const icon = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒'}[notifArt.sport] || '🏆';
+            _notify('🏆 Sporto naujienos', icon + ' ' + notifArt.title, notifArt.url || '/');
+          }
+        }
       }
     }
-    _lastRecent = newKey;
+    _lastRecent = fullKey;
   } catch {}
 }
 async function manualRefresh() {
@@ -1183,20 +1186,25 @@ async function swPoll() {
     const d = await r.json();
     const arts = d.articles || [];
     const recentIds = d.recent_ids || [];
-    const newKey = recentIds.slice().sort().join(',') + '|' + arts.length + '|' + (arts[0]?.id||'');
+    const recentKey = recentIds.slice().sort().join(',');
+    const newKey    = recentKey + '|' + arts.length + '|' + (arts[0]?.id||'');
 
     if (_swKnownKey !== null && newKey !== _swKnownKey) {
-      const notifArt = recentIds.length
-        ? arts.find(a => recentIds.includes(a.id))
-        : arts[0];
-      if (notifArt) {
-        const icon = notifArt.sport === 'futbolas' ? '⚽' : '🏀';
-        await self.registration.showNotification('🏆 Sporto naujienos', {
-          body:     icon + ' ' + notifArt.title,
-          tag:      'sporto-naujienos',
-          renotify: true,
-          data:     { url: notifArt.url || 'https://fules-online.vercel.app/' },
-        });
+      // Notification TIKAI kai recent_ids pasikeitė
+      const prevRecentKey = (_swKnownKey || '').split('|')[0];
+      if (recentKey && recentKey !== prevRecentKey) {
+        const notifArt = recentIds.length
+          ? arts.find(a => recentIds.includes(a.id))
+          : arts[0];
+        if (notifArt) {
+          const icon = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒'}[notifArt.sport] || '🏆';
+          await self.registration.showNotification('🏆 Sporto naujienos', {
+            body:     icon + ' ' + notifArt.title,
+            tag:      'sporto-naujienos',
+            renotify: true,
+            data:     { url: notifArt.url || 'https://fules-online.vercel.app/' },
+          });
+        }
       }
     }
     _swKnownKey = newKey;
