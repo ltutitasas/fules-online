@@ -593,13 +593,14 @@ def _sort_key(art):
         try: return datetime.fromisoformat(d).replace(tzinfo=None)
         except: return datetime.min
 
-def run_scraper():
+def run_scraper(mode="all"):
+    """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
     seen_ids    = _kv_smembers("seen_ids")
     seen_urls   = _kv_smembers("seen_urls")   # URL deduplication – net jei pavadinimas pasikeitė
     dates_cache = _kv_get("dates_cache") or {}
     first_seen  = _kv_get("first_seen") or {}   # {id: iso} – kada MES pirmą kartą pamatėme
-    rss_sites  = [s for s in _SITES if "rss" in s]
-    http_sites = [s for s in _SITES if s.get("method") == "http"]
+    rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
+    http_sites = [s for s in _SITES if s.get("method") == "http"] if mode != "rss"  else []
     all_arts   = []
     with ThreadPoolExecutor(max_workers=16) as ex:
         futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
@@ -683,7 +684,10 @@ def run_scraper():
                 if art["id"] in new_ids: recent_ids.append(art["id"])
     sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
                    [a for a in all_arts if a["id"] not in recent_ids])
-    _kv_set("articles",   sorted_arts, ex=86400*2)
+    # Merge su esamais KV straipsniais (ne overwrite) – kad RSS ir HTTP scraperiai netrukdytų vienas kitam
+    existing = _kv_get("articles") or []
+    merged = sorted_arts + [a for a in existing if a["id"] not in {x["id"] for x in sorted_arts}]
+    _kv_set("articles",   merged[:300], ex=86400*2)
     _kv_set("recent_ids", recent_ids,  ex=3600*3)
     if new_ids:
         _kv_sadd("seen_ids", *list(new_ids))
@@ -1293,6 +1297,15 @@ def cron():
     try:
         total, new_count = run_scraper()
         return jsonify({"ok": True, "total": total, "new": new_count})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/cron-rss", methods=["GET", "POST"])
+def cron_rss():
+    """Tik RSS saitai – greita (<10s), skirta cron-job.org kas 2 min"""
+    try:
+        total, new_count = run_scraper(mode="rss")
+        return jsonify({"ok": True, "total": total, "new": new_count, "mode": "rss"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
