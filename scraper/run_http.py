@@ -34,7 +34,7 @@ def kv_smembers(key):
 def kv_sadd(key, *members):
     if members:
         _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
-                  json=[["SADD", key] + list(members), ["EXPIRE", key, 86400*7]])
+                  json=[["SADD", key] + list(members), ["EXPIRE", key, 86400*30]])
 
 def tg_send(text):
     if not TG_TOKEN or not TG_CHAT: return
@@ -252,6 +252,17 @@ def main():
     existing  = kv_get("articles") or []
     new_arts  = [a for a in all_arts if a["id"] in new_ids]
     merged    = new_arts + [a for a in existing if a["id"] not in new_ids]
+    # Persortavimas pagal datą – seni straipsniai neatsiduria viršuje
+    def _sort_key(art):
+        d = art.get("date","")
+        if not d: return datetime.min.replace(tzinfo=None)
+        try:
+            from email.utils import parsedate_to_datetime
+            return parsedate_to_datetime(d).replace(tzinfo=None)
+        except:
+            try: return datetime.fromisoformat(d.replace("Z","")).replace(tzinfo=None)
+            except: return datetime.min.replace(tzinfo=None)
+    merged.sort(key=_sort_key, reverse=True)
     kv_set("articles", merged[:300], ex=86400*2)
 
     kv_sadd("seen_ids",  *[a["id"]  for a in new_arts])

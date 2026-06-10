@@ -61,7 +61,7 @@ def _kv_sadd(key, *members):
     if not KV_URL or not members: return
     _req.post(f"{KV_URL}/pipeline",
               headers={"Authorization": f"Bearer {KV_TOKEN}"},
-              json=[["SADD", key] + list(members), ["EXPIRE", key, 86400 * 7]],
+              json=[["SADD", key] + list(members), ["EXPIRE", key, 86400 * 30]],
               timeout=5)
 
 
@@ -681,12 +681,19 @@ def run_scraper(mode="all"):
                 if dt.replace(tzinfo=None) >= cutoff.replace(tzinfo=None):
                     recent_ids.append(art["id"])
             except:
-                if art["id"] in new_ids: recent_ids.append(art["id"])
+                # Naudojame first_seen – tik jei MES pamatėme neseniai (per 10 min)
+                fs = first_seen.get(art["id"], "")
+                if fs:
+                    try:
+                        if datetime.fromisoformat(fs.replace("Z","+00:00")) >= datetime.now(timezone.utc) - timedelta(minutes=10):
+                            recent_ids.append(art["id"])
+                    except: pass
     sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
                    [a for a in all_arts if a["id"] not in recent_ids])
     # Merge su esamais KV straipsniais (ne overwrite) – kad RSS ir HTTP scraperiai netrukdytų vienas kitam
     existing = _kv_get("articles") or []
     merged = sorted_arts + [a for a in existing if a["id"] not in {x["id"] for x in sorted_arts}]
+    merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
     _kv_set("articles",   merged[:300], ex=86400*2)
     _kv_set("recent_ids", recent_ids,  ex=3600*3)
     if new_ids:
