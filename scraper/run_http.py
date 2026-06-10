@@ -18,23 +18,44 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 MAX = 10
 
+def _kv_retry(fn, retries=3, delay=4):
+    """KV užklausa su retry – tinklo laikini trukdžiai GitHub Actions"""
+    last_err = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            if i < retries - 1:
+                print(f"  ⚠️  KV retry {i+1}/{retries-1}: {e}")
+                time.sleep(delay)
+    raise last_err
+
 def kv_get(key):
-    r = _req.get(f"{KV_URL}/get/{key}", headers=_HDR, timeout=10)
-    result = r.json().get("result")
-    return json.loads(result) if result else None
+    def _do():
+        r = _req.get(f"{KV_URL}/get/{key}", headers=_HDR, timeout=10)
+        result = r.json().get("result")
+        return json.loads(result) if result else None
+    return _kv_retry(_do)
 
 def kv_set(key, value, ex=86400*2):
-    _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
-              json=[["SET", key, json.dumps(value, ensure_ascii=False), "EX", ex]])
+    def _do():
+        _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
+                  json=[["SET", key, json.dumps(value, ensure_ascii=False), "EX", ex]])
+    _kv_retry(_do)
 
 def kv_smembers(key):
-    r = _req.get(f"{KV_URL}/smembers/{key}", headers=_HDR, timeout=10)
-    return set(r.json().get("result") or [])
+    def _do():
+        r = _req.get(f"{KV_URL}/smembers/{key}", headers=_HDR, timeout=10)
+        return set(r.json().get("result") or [])
+    return _kv_retry(_do)
 
 def kv_sadd(key, *members):
-    if members:
+    if not members: return
+    def _do():
         _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
                   json=[["SADD", key] + list(members), ["EXPIRE", key, 86400*30]])
+    _kv_retry(_do)
 
 def tg_send(text):
     if not TG_TOKEN or not TG_CHAT: return
