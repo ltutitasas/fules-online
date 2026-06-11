@@ -5,9 +5,10 @@ from bs4 import BeautifulSoup as _BS4
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
 
-# Bendra saitų konfigūracija – sites_config.py repo šaknyje
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sites_config import SITES as _SITES, slim_art as _slim_art
+# Bendra saitų konfigūracija – api/_sites_config.py (pabraukimas = Vercel
+# neeksponuoja kaip atskiros funkcijos, bet įtraukia į bundle)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _sites_config import SITES as _SITES, slim_art as _slim_art
 
 # lxml ~5-10x greitesnis už html.parser; fallback jei Vercel jo neturėtų
 try:

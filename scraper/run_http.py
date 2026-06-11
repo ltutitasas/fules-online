@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sites_config import HTTP_SITES, slim_art
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api"))
+from _sites_config import HTTP_SITES, slim_art
 
 try:
     import lxml  # noqa: F401

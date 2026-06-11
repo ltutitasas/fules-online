@@ -18,7 +18,7 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 
 | Failas | Paskirtis |
 |---|---|
-| `sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja ir api/index.py, ir run_http.py |
+| `api/_sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja ir api/index.py, ir run_http.py. ⚠️ Pabraukimas pavadinime BŪTINAS – be jo Vercel bandytų failą paversti atskira funkcija; šakninių failų Vercel į bundle neįtraukia (buvo FUNCTION_INVOCATION_FAILED) |
 | `api/index.py` | Flask app, RSS+HTTP scraperiai, frontend HTML/JS, Service Worker, sportas.lt publikavimas. Vienas didelis failas. |
 | `scraper/run_http.py` | Atskiras HTTP-only scraperis GitHub Actions'ui (be Vercel 10s limito) |
 | `scraper/run.py` | Senas pilnas scraperis (GitHub Actions `scrape.yml`, retai naudojamas, turi SAVO seną saitų kopiją) |
@@ -89,7 +89,7 @@ Visi KV skaitymai/rašymai scraperiuose eina per **pipeline** (`_kv_pipeline` /
 ⚠️ `seen_ids` TTL buvo 7 d. – seni straipsniai "atgydavo" ir lipdavo į viršų.
 Dabar 30 d. + merged sort pagal datą sprendžia šią problemą.
 
-## Saitų konfigūracija (`sites_config.py` – repo šaknyje!)
+## Saitų konfigūracija (`api/_sites_config.py`)
 
 ### RSS saitai (scrape'ina Vercel kas ~1 min)
 ⚽ FK Banga, FC Džiugas, FC Hegelmann, FK Panevėžys, FK Sūduva, FK TransINVEST,
@@ -117,7 +117,7 @@ Lietuva Basketball, BC Rytas
   kad nedubliuotų title/autoriaus)
 
 ### Naujo saito pridėjimas (dažniausias darbas!)
-1. Į `SITES` (failas `sites_config.py`) pridėti dict su `rss` (jei WordPress – beveik visada yra `/feed/`)
+1. Į `SITES` (failas `api/_sites_config.py`) pridėti dict su `rss` (jei WordPress – beveik visada yra `/feed/`)
 2. Vartotojas pateiks sportas.lt **šaltinio ID** (`<option value="X">pavadinimas</option>`) → `sportas_source`
 3. Jei reikia specialių kategorijų → `_SITE_CATS_OVERRIDE` (žr. žemiau)
 4. Jei vartotojas pateiks **foto šaltinio ID** → `_SOURCE_MAP` (funkcijoje `upload_photo`)
