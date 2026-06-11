@@ -383,7 +383,7 @@ _SITES = [
     {"name":"FK Sūduva",         "sport":"futbolas",  "sportas_source":"118",  "rss":"https://fksuduva.lt/feed/", "og_image_fallback": True, "image_selector": ".post-featured-image img"},
     {"name":"FK TransINVEST",    "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fktransinvest.lt/feed/"},
     {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/", "og_image_fallback": True, "image_selector": ".elementor-post__thumbnail img"},
-    {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/"},
+    {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/", "og_image_fallback": True, "image_selector": ".little-thumb-single"},
     {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
     {"name":"BC Kibirkštis",     "sport":"krepšinis", "sportas_source":"54",   "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True, "text_selector":".entry-summary"},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
@@ -645,8 +645,10 @@ def run_scraper(mode="all"):
                     if src and src.startswith("http"): return art["id"], src
         except: pass
         return art["id"], None
-    arts_no_img = [a for a in all_arts if not a.get("image") and a.get("url")
-                   and a["site"] in _OG_FALLBACK_SITES]
+    # Saitams su image_selector – visada naudojame selektorių (ne RSS kūno atsitiktinį paveikslą)
+    _IMG_SEL_SITES = {s["name"] for s in _SITES if s.get("og_image_fallback") and s.get("image_selector")}
+    arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
+                   (not a.get("image") or a["site"] in _IMG_SEL_SITES)]
     if arts_no_img:
         with ThreadPoolExecutor(max_workers=6) as ex:
             for aid, img in ex.map(_fetch_og_image, arts_no_img):
