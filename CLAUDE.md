@@ -18,11 +18,32 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 
 | Failas | Paskirtis |
 |---|---|
-| `api/index.py` | VISKAS: Flask app, RSS+HTTP scraperiai, frontend HTML/JS, Service Worker, sportas.lt publikavimas. Vienas didelis failas. |
+| `sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja ir api/index.py, ir run_http.py |
+| `api/index.py` | Flask app, RSS+HTTP scraperiai, frontend HTML/JS, Service Worker, sportas.lt publikavimas. Vienas didelis failas. |
 | `scraper/run_http.py` | Atskiras HTTP-only scraperis GitHub Actions'ui (be Vercel 10s limito) |
-| `scraper/run.py` | Senas pilnas scraperis (GitHub Actions `scrape.yml`, retai naudojamas) |
-| `.github/workflows/scrape-http.yml` | HTTP scraperio workflow (workflow_dispatch) |
+| `scraper/run.py` | Senas pilnas scraperis (GitHub Actions `scrape.yml`, retai naudojamas, turi SAVO seną saitų kopiją) |
+| `.github/workflows/scrape-http.yml` | HTTP scraperio workflow (workflow_dispatch, palaiko `cycles` input) |
 | `.github/workflows/scrape.yml` | Senas workflow su schedule (GitHub jį throttlina, nepatikimas) |
+
+## Atsarginė kopija / rollback
+
+Stabili versija prieš 2026-06-11 optimizaciją išsaugota:
+- **Git tag**: `stabili-2026-06-11`
+- **Šaka**: `backup-stabili` (GitHube)
+
+Grįžimas nelaimės atveju:
+```bash
+git checkout main
+git reset --hard stabili-2026-06-11
+git push --force origin main        # Vercel automatiškai deploy'ins seną versiją
+```
+Arba be force (saugiau, istorija išlieka):
+```bash
+git revert --no-edit <blogo_commito_hash>..HEAD && git push origin main
+```
+KV suderinamumas grįžtant: senas kodas naujus raktus ignoruoja, o `recent_ids`
+per 1–2 min (kitas cron runas) perrašys į savo seną formatą. Straipsniai be
+`html_content` publikuojami per URL fallback – veikia abiejose versijose.
 
 ## Architektūra: dviejų scraperių sistema
 
@@ -52,17 +73,23 @@ throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – 
 
 | Raktas | Tipas | TTL | Paskirtis |
 |---|---|---|---|
-| `articles` | JSON list | 2 d. | Visi straipsniai (max 300), surūšiuoti pagal datą |
-| `seen_ids` | SET | 30 d. | Matytų straipsnių ID (md5(url+title)) – deduplication |
+| `articles` | JSON list | 2 d. | Visi straipsniai (max 300), **SLIM** – be html_content/text, surūšiuoti pagal datą |
+| `html:{id}` | JSON string | 2 d. | RSS straipsnio HTML turinys publikavimui (atskirai, kad articles būtų mažas) |
+| `articles_meta` | JSON dict | 2 d. | {count, first, ts} – `/api/version` polling'ui |
+| `seen_ids` | SET | 30 d. | Matytų straipsnių ID (md5(url+title)) – deduplication (tikrinama per SMISMEMBER) |
 | `seen_urls` | SET | 30 d. | Matyti URL (apsauga nuo redaguotų pavadinimų) |
 | `dates_cache` | JSON dict | 30 d. | {id: iso_data} – straipsniams be datos |
 | `first_seen` | JSON dict | 30 d. | {id: iso} – kada MES pirmą kartą pamatėme |
-| `recent_ids` | JSON list | 3 h | "Naujų" straipsnių ID – notificationams |
+| `recent_ids` | JSON **dict** | 3 h | {id: iso} – KAUPIAMAS (ne perrašomas!), įrašai senesni nei 3h išmetami kiekvieno runo metu |
+| `scrape_status` | JSON dict | 7 d. | {site: {ok, n}} – kada saitas paskutinį kartą grąžino straipsnių (`/api/scrape-status`) |
+
+Visi KV skaitymai/rašymai scraperiuose eina per **pipeline** (`_kv_pipeline` /
+`kv_pipeline`) – vienas HTTP request'as vietoj 5-6 round-trip'ų.
 
 ⚠️ `seen_ids` TTL buvo 7 d. – seni straipsniai "atgydavo" ir lipdavo į viršų.
 Dabar 30 d. + merged sort pagal datą sprendžia šią problemą.
 
-## Saitų konfigūracija (`_SITES` api/index.py)
+## Saitų konfigūracija (`sites_config.py` – repo šaknyje!)
 
 ### RSS saitai (scrape'ina Vercel kas ~1 min)
 ⚽ FK Banga, FC Džiugas, FC Hegelmann, FK Panevėžys, FK Sūduva, FK TransINVEST,
@@ -90,7 +117,7 @@ Lietuva Basketball, BC Rytas
   kad nedubliuotų title/autoriaus)
 
 ### Naujo saito pridėjimas (dažniausias darbas!)
-1. Į `_SITES` pridėti dict su `rss` (jei WordPress – beveik visada yra `/feed/`)
+1. Į `SITES` (failas `sites_config.py`) pridėti dict su `rss` (jei WordPress – beveik visada yra `/feed/`)
 2. Vartotojas pateiks sportas.lt **šaltinio ID** (`<option value="X">pavadinimas</option>`) → `sportas_source`
 3. Jei reikia specialių kategorijų → `_SITE_CATS_OVERRIDE` (žr. žemiau)
 4. Jei vartotojas pateiks **foto šaltinio ID** → `_SOURCE_MAP` (funkcijoje `upload_photo`)
@@ -124,14 +151,27 @@ Override turi pirmenybę: `cat_ids = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CAT
 Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` stringe (api/index.py).
 
 ### Notification logika (daug kartų taisyta – atsargiai!)
-- Puslapis polls `/api/articles` kas 10s (`_checkNew()`), SW žadinamas kas 30s
-- **Notification siunčiamas TIK kai pasikeičia `recent_ids`** (recentKey dalis),
-  NE kai pasikeičia arts.length/arts[0] – kitaip HTTP scraperio merge
-  sukeldavo pakartotinį to paties straipsnio notificationą
-- Multi-tab apsauga: `localStorage` raktas `lastNotifiedRecent` – pirma kortelė
-  įrašo, kitos mato ir nebesiunčia
+- Puslapis polls **`/api/version`** kas 10s (`_checkNew()`) – mažytis atsakymas
+  (~100 B); pilnas `/api/articles` siunčiamas TIK kai versija pasikeitė. SW žadinamas kas 30s.
+- **Notification siunčiamas TIK naujai ATSIRADUSIEMS recent ID** (`added` =
+  recentIds, kurių nebuvo ankstesniame poll'e). NE kai recent sąrašas susitraukia
+  (3h langas baigėsi) ar persirikiuoja – kitaip būtų pakartotiniai notificationai.
+- Multi-tab apsauga: `localStorage` raktas `notifiedIds` (JSON list, max 100 ID) –
+  pirma kortelė įrašo, kitos mato ir nebesiunčia
 - `_lastRecent` formatas: `"id1,id2|count|firstId"` – localStorage ir atmintyje
   formatai PRIVALO sutapti (buvo bug'as)
+- SW turi savo in-memory `_swPrevRecent`/`_swNotified` – naršyklei nužudžius SW,
+  baseline atsistato per INIT žinutę iš puslapio
+
+### Auth (APP_TOKEN)
+- Publikavimo/admin endpointai (`/api/post`, `/api/upload-photo`, `/api/photos`,
+  `/api/sources`, `/api/refresh`, `/api/photo-debug`, `/api/tg-test`, visi debug)
+  reikalauja `X-App-Token` headerio arba `?token=` (curl'ui), kai Vercel env
+  nustatytas `APP_TOKEN`. **Kol APP_TOKEN nenustatytas – viskas atvira (kaip anksčiau).**
+- Frontend tokeną laiko `localStorage.appToken`; gavęs 401 paprašo per `prompt()`.
+- `/api/article-text` atviras, bet priima tik mūsų saitų domenus (ne atviras proxy).
+- Atviri lieka: `/`, `/sw.js`, `/api/articles`, `/api/version`, `/api/scrape-status`,
+  `/api/cron`, `/api/cron-rss` (juos kviečia cron-job.org be tokeno!).
 
 ### Telegram
 - Siunčia ir Vercel (`run_scraper`), ir GitHub Actions (`run_http.py`) – kiekvienas už savo saitus
@@ -150,11 +190,23 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 5. **LTOK = Cloudflare 403** – nebandyti įjungti be self-hosted runner ar panašaus sprendimo.
 6. **`merged.sort()` būtinas** po merge – kitaip seni straipsniai atsiduria viršuje.
 7. **image_selector > og:image** – og:image kartais rodo ne herojinę nuotrauką (FK Žalgiris atvejis).
+8. **`articles` KV yra SLIM** – be `html_content`/`text`. Publikavimui HTML imamas iš
+   `html:{id}` rakto, o jo nesant – fallback parsisiunčia iš straipsnio URL (`_do_post`).
+9. **Paveikslai cache'inami** – og:image/image_selector fetch daromas tik straipsniams,
+   kurių paveikslo dar nėra KV `articles` (kitaip kas runą siųstųsi dešimtys puslapių).
+10. **`recent_ids` – dict, kaupiamas** – NEPERRAŠYTI plikų list'u, kitaip badge/notificationai
+    vėl suges (senas bug'as: badge dingdavo per 1-2 min vietoj 3h).
+11. **`anthropic` išimtas iš requirements.txt** (AI išjungtas) – įjungiant `_ai_enrich`,
+    paketą reikia grąžinti.
+12. **`lxml` su fallback** – jei aplinkoje nėra, kodas pats persijungia į `html.parser`.
 
 ## Debug įrankiai
 
-- `/api/debug-fetch?name=SaitoVardas` – parodo HTTP statusą, HTML ilgį, selektorių
-  matches, html_preview. Naudinga aiškinantis kodėl saitas negrąžina straipsnių.
+- `/api/debug-fetch?site=SaitoVardas&token=...` – parodo HTTP statusą, HTML ilgį,
+  selektorių matches, html_preview. Naudinga aiškinantis kodėl saitas negrąžina straipsnių.
+- `/api/scrape-status` – kada kiekvienas saitas paskutinį kartą grąžino straipsnių
+  (jei saito nėra arba `ok` senas – saitas tyliai miręs, tikrinti debug-fetch).
+- `/api/version` – greitas patikrinimas ar scraperiai gyvi (`ts` articles_meta viduje).
 - GitHub Actions logs: https://github.com/ltutitasas/fules-online/actions
 - cron-job.org dashboard – execution history (200 OK / 204 No Content = OK)
 
@@ -164,7 +216,9 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 |---|---|
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel env + GitHub secrets |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Vercel env + GitHub secrets |
+| `APP_TOKEN` | Vercel env – publikavimo endpointų apsauga (nenustatytas = atvira) |
 | GitHub PAT (`ghp_...`) | cron-job.org Job 2 header |
+| `CYCLES` | GitHub Actions workflow input – scrape ciklų sk. viename rune (default 1) |
 
 ## Deployment
 

@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """HTTP-only scraper – lkl.lt, toplyga.lt, zalgiris.lt ir kt.
-Paleidžiamas per GitHub Actions (workflow_dispatch) kas 2 min via cron-job.org.
-Naudoja merge strategiją – neperrašo RSS straipsnių KV."""
+Paleidžiamas per GitHub Actions (workflow_dispatch) via cron-job.org.
+Naudoja merge strategiją – neperrašo RSS straipsnių KV.
+Saitų sąrašas – bendras sites_config.py (repo šaknyje)."""
 
-import json, os, hashlib, time, requests as _req
+import json, os, sys, hashlib, time, requests as _req
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sites_config import HTTP_SITES, slim_art
+
+try:
+    import lxml  # noqa: F401
+    PARSER = "lxml"
+except ImportError:
+    PARSER = "html.parser"
 
 KV_URL   = os.environ["KV_REST_API_URL"]
 KV_TOKEN = os.environ["KV_REST_API_TOKEN"]
@@ -31,31 +42,18 @@ def _kv_retry(fn, retries=3, delay=4):
                 time.sleep(delay)
     raise last_err
 
-def kv_get(key):
+def kv_pipeline(cmds, timeout=15):
+    """Daug Redis komandų vienu HTTP request'u."""
+    if not cmds: return []
     def _do():
-        r = _req.get(f"{KV_URL}/get/{key}", headers=_HDR, timeout=10)
-        result = r.json().get("result")
-        return json.loads(result) if result else None
+        r = _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=timeout, json=cmds)
+        return [item.get("result") for item in r.json()]
     return _kv_retry(_do)
 
-def kv_set(key, value, ex=86400*2):
-    def _do():
-        _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
-                  json=[["SET", key, json.dumps(value, ensure_ascii=False), "EX", ex]])
-    _kv_retry(_do)
-
-def kv_smembers(key):
-    def _do():
-        r = _req.get(f"{KV_URL}/smembers/{key}", headers=_HDR, timeout=10)
-        return set(r.json().get("result") or [])
-    return _kv_retry(_do)
-
-def kv_sadd(key, *members):
-    if not members: return
-    def _do():
-        _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=10,
-                  json=[["SADD", key] + list(members), ["EXPIRE", key, 86400*30]])
-    _kv_retry(_do)
+def kv_json(raw, default):
+    if not raw: return default
+    try: return json.loads(raw)
+    except Exception: return default
 
 def tg_send(text):
     if not TG_TOKEN or not TG_CHAT: return
@@ -66,47 +64,6 @@ def tg_send(text):
 
 def art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
-
-# ── Tik HTTP saitai ────────────────────────────────────────────────
-HTTP_SITES = [
-    # ⚽ FUTBOLAS
-    {"name":"Top Lyga", "sport":"futbolas", "method":"http",
-     "url":"https://toplyga.lt/naujienos",
-     "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
-     "base_url":"https://toplyga.lt"},
-    {"name":"Žalgiris futbolas", "sport":"futbolas", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=futbolas",
-     "selectors":{"articles":"article","title":"div.font-semibold a",
-                  "link":"div.font-semibold a","image":"figure img"},
-     "base_url":"https://zalgiris.lt"},
-    {"name":"FK Riteriai", "sport":"futbolas", "method":"http",
-     "url":"https://www.fkriteriai.lt/naujienos",
-     "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
-    # 🏀 KREPŠINIS
-    {"name":"LKL", "sport":"krepšinis", "method":"http",
-     "url":"https://lkl.lt/straipsniai",
-     "link_pattern_re": r"/straipsniai/\d+/",
-     "base_url":"https://lkl.lt"},
-    {"name":"Žalgiris", "sport":"krepšinis", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=zalgiris",
-     "selectors":{"articles":"article","title":"div.font-semibold a",
-                  "link":"div.font-semibold a","image":"figure img"},
-     "base_url":"https://zalgiris.lt"},
-    {"name":"KK Nevėžis", "sport":"krepšinis", "method":"http",
-     "url":"https://www.kknevezis.lt/naujienos",
-     "link_pattern":"/naujienos/", "base_url":"https://www.kknevezis.lt"},
-    {"name":"BC Jonava", "sport":"krepšinis", "method":"http",
-     "url":"https://bcjonavahipocredit.lt/naujienos/",
-     "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
-     "base_url":"https://bcjonavahipocredit.lt"},
-    # 🏒 KITI
-    {"name":"Hockey Lietuva", "sport":"ledo ritulys", "method":"http",
-     "url":"https://www.hockey.lt/index.php/naujienos/17",
-     "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
-     "base_url":"https://www.hockey.lt",
-     "og_image_fallback": True, "image_selector":".news_item_img img",
-     "text_selector":".short_text"},
-]
 
 _HTTP_HEADERS = {
     "User-Agent": UA,
@@ -122,7 +79,7 @@ def fetch_http(site):
         if r.status_code != 200:
             print(f"  ⚠️  {site['name']}: HTTP {r.status_code}")
             return []
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(r.text, PARSER)
         base = site.get("base_url", "")
         articles = []
 
@@ -200,22 +157,31 @@ def fetch_og_image(art, img_sel):
             m = _re.search(pat, html)
             if m: return art["id"], m.group(1)
         if img_sel:
-            el = BeautifulSoup(html, "html.parser").select_one(img_sel)
+            el = BeautifulSoup(html, PARSER).select_one(img_sel)
             if el:
                 src = el.get("data-src") or el.get("src", "")
                 if src and src.startswith("http"): return art["id"], src
     except: pass
     return art["id"], None
 
+def _sort_key(art):
+    d = art.get("date", "")
+    if not d: return datetime.min
+    try: return parsedate_to_datetime(d).replace(tzinfo=None)
+    except:
+        try: return datetime.fromisoformat(d.replace("Z", "")).replace(tzinfo=None)
+        except: return datetime.min
+
 def main():
     print(f"\n{'═'*50}")
     print(f"🌐 HTTP SCRAPER  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'═'*50}\n")
 
-    seen_ids  = kv_smembers("seen_ids")
-    seen_urls = kv_smembers("seen_urls")
-    dates_cache = kv_get("dates_cache") or {}
-    first_seen  = kv_get("first_seen") or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    pre = kv_pipeline([["GET", "dates_cache"], ["GET", "first_seen"], ["GET", "scrape_status"]])
+    dates_cache   = kv_json(pre[0], {})
+    first_seen    = kv_json(pre[1], {})
+    scrape_status = kv_json(pre[2], {})
 
     all_arts = []
     print(f"🌐 HTTP ({len(HTTP_SITES)} saitų)...")
@@ -226,28 +192,46 @@ def main():
             try:
                 arts = fut.result()
                 all_arts.extend(arts)
+                if arts:
+                    scrape_status[s["name"]] = {"ok": now_iso, "n": len(arts)}
                 print(f"  ✅ {s['name']}: {len(arts)}")
             except Exception as e:
                 print(f"  ❌ {s['name']}: {e}")
 
-    new_ids = {a["id"] for a in all_arts
-               if a["id"] not in seen_ids and a.get("url","") not in seen_urls}
+    # Naujumo patikra: SMISMEMBER tik kandidatams + esami articles/recent vienu pipeline
+    ids  = [a["id"] for a in all_arts]
+    urls = [a.get("url", "") for a in all_arts]
+    chk_cmds = [["SCARD", "seen_ids"], ["GET", "articles"], ["GET", "recent_ids"]]
+    if ids:
+        chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
+        chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
+    chk = kv_pipeline(chk_cmds)
+    seen_count = int(chk[0] or 0)
+    existing   = kv_json(chk[1], [])
+    raw_recent = kv_json(chk[2], {})
+    id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
+    url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
+    new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
+               if not int(s1 or 0) and not int(s2 or 0)}
     print(f"\n📊 Iš viso: {len(all_arts)} | Naujų: {len(new_ids)}")
 
-    # og:image fallback
+    # og:image fallback – tik straipsniams, kurių paveikslas dar neišspręstas KV
     _OG_FALLBACK = {s["name"] for s in HTTP_SITES if s.get("og_image_fallback")}
-    _IMG_SEL     = {s["name"]: s.get("image_selector","") for s in HTTP_SITES}
-    arts_no_img  = [a for a in all_arts if not a.get("image") and a.get("url") and a["site"] in _OG_FALLBACK]
+    _IMG_SEL     = {s["name"]: s.get("image_selector", "") for s in HTTP_SITES}
+    existing_img = {a["id"]: a.get("image") for a in existing if a.get("image")}
+    for a in all_arts:
+        if not a.get("image") and a["id"] in existing_img:
+            a["image"] = existing_img[a["id"]]
+    arts_no_img = [a for a in all_arts if not a.get("image") and a.get("url") and a["site"] in _OG_FALLBACK]
     if arts_no_img:
         print(f"🖼️  og:image fallback: {len(arts_no_img)} straipsnių...")
         with ThreadPoolExecutor(max_workers=6) as ex:
-            for aid, img in ex.map(lambda a: fetch_og_image(a, _IMG_SEL.get(a["site"],"")), arts_no_img):
+            for aid, img in ex.map(lambda a: fetch_og_image(a, _IMG_SEL.get(a["site"], "")), arts_no_img):
                 if img:
                     for a in all_arts:
                         if a["id"] == aid: a["image"] = img; break
 
     # Datos
-    now_iso = datetime.now(timezone.utc).isoformat()
     dates_changed = first_seen_changed = False
     for art in all_arts:
         aid = art["id"]
@@ -260,48 +244,62 @@ def main():
             first_seen[aid] = now_iso
             first_seen_changed = True
 
-    if not new_ids:
-        print("  Nieko naujo.")
-        # Vis tiek atnaujinti TTL
-        existing = kv_get("articles") or []
-        if existing:
-            kv_set("articles", existing, ex=86400*2)
-        return
-
-    # Merge su esamais KV straipsniais (ne overwrite)
-    print("\n💾 Merge į Vercel KV...")
-    existing  = kv_get("articles") or []
-    new_arts  = [a for a in all_arts if a["id"] in new_ids]
-    merged    = new_arts + [a for a in existing if a["id"] not in new_ids]
-    # Persortavimas pagal datą – seni straipsniai neatsiduria viršuje
-    def _sort_key(art):
-        d = art.get("date","")
-        if not d: return datetime.min.replace(tzinfo=None)
-        try:
-            from email.utils import parsedate_to_datetime
-            return parsedate_to_datetime(d).replace(tzinfo=None)
-        except:
-            try: return datetime.fromisoformat(d.replace("Z","")).replace(tzinfo=None)
-            except: return datetime.min.replace(tzinfo=None)
+    # Merge VISŲ atneštų straipsnių (ne tik naujų) – jei lygiagretus RSS runas
+    # netyčia perrašytų mūsų įrašus, kitas runas juos atkurtų
+    new_arts = [a for a in all_arts if a["id"] in new_ids]
+    fetched_ids = {a["id"] for a in all_arts}
+    merged = all_arts + [a for a in existing if a["id"] not in fetched_ids]
     merged.sort(key=_sort_key, reverse=True)
-    kv_set("articles", merged[:300], ex=86400*2)
+    slim = [slim_art(a) for a in merged[:300]]
 
-    kv_sadd("seen_ids",  *[a["id"]  for a in new_arts])
-    kv_sadd("seen_urls", *[a["url"] for a in new_arts if a.get("url")])
-    if dates_changed:  kv_set("dates_cache", dates_cache, ex=86400*30)
-    if first_seen_changed: kv_set("first_seen", first_seen, ex=86400*30)
+    # recent_ids – KAUPIAMAS dict {id: iso} (badge + naršyklės notificationai,
+    # dabar veikia ir HTTP saitams)
+    if isinstance(raw_recent, list):
+        raw_recent = {i: now_iso for i in raw_recent}
+    cutoff3 = datetime.now(timezone.utc) - timedelta(hours=3)
+    def _fresh3(iso):
+        try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")) >= cutoff3
+        except: return False
+    rec_map = {i: t for i, t in raw_recent.items() if _fresh3(t)}
+    for a in new_arts:
+        rec_map.setdefault(a["id"], now_iso)
+
+    print("\n💾 Merge į Vercel KV...")
+    write_cmds = [
+        ["SET", "articles",   json.dumps(slim, ensure_ascii=False), "EX", 86400*2],
+        ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
+        ["SET", "articles_meta", json.dumps({"count": len(slim),
+                                             "first": slim[0]["id"] if slim else "",
+                                             "ts": now_iso}), "EX", 86400*2],
+        ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
+    ]
+    if new_ids:
+        write_cmds.append(["SADD", "seen_ids"] + [a["id"] for a in new_arts])
+        write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
+        new_urls = [a["url"] for a in new_arts if a.get("url")]
+        if new_urls:
+            write_cmds.append(["SADD", "seen_urls"] + new_urls)
+            write_cmds.append(["EXPIRE", "seen_urls", 86400*30])
+    if dates_changed:
+        write_cmds.append(["SET", "dates_cache", json.dumps(dates_cache), "EX", 86400*30])
+    if first_seen_changed:
+        write_cmds.append(["SET", "first_seen", json.dumps(first_seen), "EX", 86400*30])
+    kv_pipeline(write_cmds)
     print(f"✅ Išsaugota. Naujų: {len(new_ids)}")
 
-    # Telegram
+    if not new_ids:
+        return
+
+    # Telegram – tik nauji IR pirmo pamatymo laikas ne senesnis nei 24h
     tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     def is_fresh(art):
         d = first_seen.get(art["id"], "")
         if not d: return True
-        try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
+        try: return datetime.fromisoformat(d.replace("Z", "+00:00")) >= tg_cutoff
         except: return True
 
     fresh = [a for a in new_arts if is_fresh(a)]
-    if fresh and seen_ids:  # seen_ids tuščias = pirmas paleidimas, nesiunčiame
+    if fresh and seen_count:  # seen_ids tuščias = pirmas paleidimas, nesiunčiame
         sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
         lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
         for a in fresh[:5]:
@@ -312,4 +310,9 @@ def main():
         print(f"📨 Telegram: {len(fresh)} naujos")
 
 if __name__ == "__main__":
-    main()
+    # CYCLES > 1 leidžia vienam GitHub Actions runui scrape'inti kelis kartus
+    # (mažiau runų – mažiau setup overhead). Naudoti kartu su retesniu cron'u!
+    cycles = int(os.environ.get("CYCLES", "1") or "1")
+    for i in range(cycles):
+        if i: time.sleep(40)
+        main()

@@ -1,9 +1,20 @@
 from flask import Flask, request, jsonify, Response
-import json, os, time, requests as _req, hashlib, feedparser
+import json, os, sys, time, requests as _req, hashlib, feedparser
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup as _BS4
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
+
+# Bendra saitų konfigūracija – sites_config.py repo šaknyje
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sites_config import SITES as _SITES, slim_art as _slim_art
+
+# lxml ~5-10x greitesnis už html.parser; fallback jei Vercel jo neturėtų
+try:
+    import lxml  # noqa: F401
+    _PARSER = "lxml"
+except ImportError:
+    _PARSER = _PARSER
 
 app = Flask(__name__)
 
@@ -14,6 +25,18 @@ SPORTAS_USER  = os.environ.get("SPORTAS_USER", "")
 SPORTAS_PASS  = os.environ.get("SPORTAS_PASS", "")
 TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT       = os.environ.get("TELEGRAM_CHAT_ID", "")
+APP_TOKEN     = os.environ.get("APP_TOKEN", "")
+
+def _auth_ok():
+    """Publikavimo/admin endpointų apsauga. Kol APP_TOKEN env nenustatytas – atvira
+    (atgalinis suderinamumas). Nustačius: header X-App-Token arba ?token=..."""
+    if not APP_TOKEN:
+        return True
+    tok = request.headers.get("X-App-Token", "") or request.args.get("token", "")
+    return tok == APP_TOKEN
+
+def _auth_fail():
+    return jsonify({"ok": False, "error": "Neautorizuota – reikia APP_TOKEN"}), 401
 
 def tg_send(text: str) -> dict:
     if not TG_TOKEN or not TG_CHAT:
@@ -63,6 +86,20 @@ def _kv_sadd(key, *members):
               headers={"Authorization": f"Bearer {KV_TOKEN}"},
               json=[["SADD", key] + list(members), ["EXPIRE", key, 86400 * 30]],
               timeout=5)
+
+def _kv_pipeline(cmds, timeout=8):
+    """Daug Redis komandų vienu HTTP request'u – taupo round-trip'us (svarbu 10s limite)."""
+    if not KV_URL or not cmds: return [None] * len(cmds)
+    r = _req.post(f"{KV_URL}/pipeline",
+                  headers={"Authorization": f"Bearer {KV_TOKEN}"},
+                  json=cmds, timeout=timeout)
+    return [item.get("result") for item in r.json()]
+
+def _kv_json(raw, default):
+    """Pipeline GET rezultatas (string arba None) → Python objektas."""
+    if not raw: return default
+    try: return json.loads(raw)
+    except Exception: return default
 
 
 # ── AI praturtinimas ───────────────────────────────────────────────
@@ -146,7 +183,7 @@ def _sources(sess):
     if cached: return cached
     from bs4 import BeautifulSoup
     r = sess.get(f"{_BASE}/editArticle/", timeout=15)
-    soup = BeautifulSoup(r.text, "html.parser")
+    soup = BeautifulSoup(r.text, _PARSER)
     sel  = soup.find("select", {"id": "sourceSelect"})
     result = {}
     if sel:
@@ -162,7 +199,7 @@ def _html_to_sportas(html_content):
     if not html_content: return ""
     import unicodedata
     html_content = unicodedata.normalize("NFC", html_content)
-    soup = _BS4(html_content, "html.parser")
+    soup = _BS4(html_content, _PARSER)
     for t in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
         t.decompose()
     # <a> → tik tekstas (pašaliname hyperlinks)
@@ -190,7 +227,10 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     title        = _nfc(article.get("title", ""))
     text         = _nfc(article.get("text", ""))
-    html_content = _nfc(article.get("html_content", ""))
+    # RSS HTML saugomas atskirame rakte html:{id} (articles sąrašas – slim).
+    # Jei rakto nebėra (TTL) – žemiau suveiks fallback iš straipsnio URL.
+    html_content = _nfc(article.get("html_content", "") or
+                        _kv_get(f"html:{article.get('id','')}") or "")
     photo_title  = _nfc(photo_title)
     photo_tags   = _nfc(photo_tags)
 
@@ -206,7 +246,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
             try:
                 r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
                 from bs4 import BeautifulSoup as _BSt
-                soup = _BSt(r.text, "html.parser")
+                soup = _BSt(r.text, _PARSER)
                 for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
                     tag.decompose()
                 # Pirma bandome site-specific text_selector (iš article dict arba _SITES config)
@@ -256,7 +296,6 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         source_id = explicit
         sources   = {}
     else:
-        _kv_set("sportas_sources", {})
         sources   = _sources(sess)
         if explicit:
             # Tikslus pavadinimas nurodytas – ieškome tik jo
@@ -271,7 +310,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         return False, f"Login nepavyko | cookies: {list(sess.cookies.keys())} | redirect: {edit_r.url}"
     if edit_r.status_code != 200:
         return False, f"editArticle grąžino {edit_r.status_code} | url: {edit_r.url}"
-    edit_soup = _BS(edit_r.text, "html.parser")
+    edit_soup = _BS(edit_r.text, _PARSER)
 
     # Ištraukiame lietuvišką datą/laiką iš sportas.lt serverio formos (jis rodo LT laiką)
     now = datetime.now(timezone(timedelta(hours=3)))  # fallback UTC+3
@@ -355,7 +394,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                 location if location.startswith("http") else "https://www.sportas.lt" + location,
                 allow_redirects=True, timeout=10)
             from bs4 import BeautifulSoup as _BSf
-            fsoup = _BSf(follow.text, "html.parser")
+            fsoup = _BSf(follow.text, _PARSER)
             # Ieškome klaidos arba sėkmės pranešimo
             alert = fsoup.select_one(".alert, .error, .success, .flash, [class*='message']")
             msg = alert.get_text(strip=True)[:200] if alert else ""
@@ -374,71 +413,7 @@ _UA  = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 _MAX = 10
 
-_SITES = [
-    # sportas_source: tikslus sportas.lt šaltinio ID. "" = automatinis matching (fallback).
-    {"name":"FK Banga",          "sport":"futbolas",  "sportas_source":"276",  "rss":"https://www.fkbanga.lt/feed/", "og_image_fallback": True, "image_selector": ".single-feat img"},
-    {"name":"FC Džiugas",        "sport":"futbolas",  "sportas_source":"1",    "rss":"https://www.fcdziugas.lt/feed/"},
-    {"name":"FC Hegelmann",      "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fchegelmann.com/feed/", "og_image_fallback": True},
-    {"name":"FK Panevėžys",      "sport":"futbolas",  "sportas_source":"1029", "rss":"https://fk-panevezys.lt/feed/", "og_image_fallback": True},
-    {"name":"FK Sūduva",         "sport":"futbolas",  "sportas_source":"118",  "rss":"https://fksuduva.lt/feed/", "og_image_fallback": True, "image_selector": ".post-featured-image img"},
-    {"name":"FK TransINVEST",    "sport":"futbolas",  "sportas_source":"1",    "rss":"https://fktransinvest.lt/feed/"},
-    {"name":"FA Šiauliai",       "sport":"futbolas",  "sportas_source":"1",    "rss":"https://siauliufa.lt/feed/", "og_image_fallback": True, "image_selector": ".elementor-post__thumbnail img"},
-    {"name":"FK Žalgiris",       "sport":"futbolas",  "sportas_source":"302",  "rss":"https://fkzalgiris.lt/feed/", "og_image_fallback": True, "image_selector": ".little-thumb-single"},
-    {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
-    {"name":"BC Kibirkštis",     "sport":"krepšinis", "sportas_source":"54",   "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True, "text_selector":".entry-summary"},
-    {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
-    {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
-    {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
-    {"name":"Utenos Juventus",   "sport":"krepšinis", "sportas_source":"138",  "rss":"https://utenosjuventus.lt/feed/"},
-    {"name":"Lietuva Basketball","sport":"krepšinis", "sportas_source":"1034", "rss":"https://lietuva.basketball/feed/"},
-    {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/", "og_image_fallback": True, "image_selector": ".article .image img"},
-    {"name":"Lengvoji atletika", "sport":"kitas sportas", "sportas_source":"17",   "rss":"https://lengvoji.lt/feed/", "og_image_fallback": True},
-    {"name":"LTU Aquatics",      "sport":"kitas sportas", "sportas_source":"56",   "rss":"https://ltuaquatics.com/feed/", "og_image_fallback": True},
-    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http",
-     "url":"https://toplyga.lt/naujienos",
-     "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
-     "base_url":"https://toplyga.lt"},
-    {"name":"Žalgiris futbolas", "sport":"futbolas", "sportas_source":"302", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=futbolas",
-     "selectors":{"articles":"article",
-                  "title":"div.font-semibold a",
-                  "link":"div.font-semibold a",
-                  "image":"figure img"},
-     "base_url":"https://zalgiris.lt"},
-    {"name":"Žalgiris", "sport":"krepšinis", "sportas_source":"8", "method":"http",
-     "url":"https://zalgiris.lt/naujienos?category=zalgiris",
-     "selectors":{"articles":"article",
-                  "title":"div.font-semibold a",
-                  "link":"div.font-semibold a",
-                  "image":"figure img"},
-     "base_url":"https://zalgiris.lt"},
-    {"name":"FK Riteriai", "sport":"futbolas", "sportas_source":"1019", "method":"http",
-     "url":"https://www.fkriteriai.lt/naujienos",
-     "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
-    {"name":"LKL", "sport":"krepšinis", "sportas_source":"30", "method":"http",
-     "url":"https://lkl.lt/straipsniai",
-     "link_pattern_re": r"/straipsniai/\d+/",
-     "base_url":"https://lkl.lt"},
-    {"name":"KK Nevėžis", "sport":"krepšinis", "sportas_source":"195", "method":"http",
-     "url":"https://www.kknevezis.lt/naujienos",
-     "link_pattern":"/naujienos/", "base_url":"https://www.kknevezis.lt"},
-    {"name":"BC Jonava", "sport":"krepšinis", "sportas_source":"1043", "method":"http",
-     "url":"https://bcjonavahipocredit.lt/naujienos/",
-     "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
-     "base_url":"https://bcjonavahipocredit.lt"},
-    # ── Kiti ────────────────────────────────────────────────────────
-    {"name":"Hockey Lietuva", "sport":"ledo ritulys", "sportas_source":"27", "method":"http",
-     "url":"https://www.hockey.lt/index.php/naujienos/17",
-     "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
-     "base_url":"https://www.hockey.lt",
-     "og_image_fallback": True, "image_selector":".news_item_img img",
-     "text_selector":".short_text"},
-    # LTOK – Cloudflare 403 "Just a moment..." blokuoja Vercel ir GitHub Actions IP
-    # {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
-    #  "url":"https://ltok.lt/naujienos", "link_pattern_re": r"/naujienos/[a-z]",
-    #  "base_url":"https://ltok.lt", "title_selector": "[class*='text-ellipsis']",
-    #  "text_selector": "[class*='prose']"},
-]
+# _SITES importuojamas iš sites_config.py (bendras su scraper/run_http.py)
 
 # Greitas peržvalgos žodynas: mūsų svetainės pavadinimas → sportas_source
 _SITE_SOURCE_OVERRIDE = {s["name"]: s["sportas_source"] for s in _SITES if s.get("sportas_source")}
@@ -460,7 +435,7 @@ def _strip_wp_footer(text: str) -> str:
 
 def _html_to_text(html):
     if not html: return ""
-    soup = _BS4(html, "html.parser")
+    soup = _BS4(html, _PARSER)
     for t in soup(["script","style","nav","footer","header","aside"]): t.decompose()
     parts = []
     for el in soup.find_all(["p","h2","h3","h4","li"]):
@@ -472,7 +447,11 @@ def _html_to_text(html):
 
 def _fetch_rss(site):
     try:
-        feed = feedparser.parse(site["rss"], request_headers={"User-Agent": _UA})
+        # requests su timeout (feedparser.parse(url) timeout neturi – pakibęs
+        # feedas kabintų visą funkciją iki Vercel 10s kill)
+        rr = _req.get(site["rss"], timeout=6,
+                      headers={"User-Agent": _UA, "Accept-Encoding": "gzip, deflate"})
+        feed = feedparser.parse(rr.content)
         arts = []
         for e in feed.entries[:_MAX]:
             title = e.get("title","").strip()
@@ -498,7 +477,7 @@ def _fetch_rss(site):
                 raw_html = e.get("summary","")
             # Fallback: pirma <img> iš HTML (data-src pirmiau dėl lazy load)
             if not image and raw_html:
-                _si = _BS4(raw_html, "html.parser")
+                _si = _BS4(raw_html, _PARSER)
                 _it = _si.find("img")
                 if _it:
                     src = _it.get("data-src","") or _it.get("src","")
@@ -525,7 +504,7 @@ def _fetch_http(site):
     try:
         r = _req.get(site["url"], headers=_HTTP_HEADERS, timeout=8)
         if r.status_code != 200: return []
-        soup = _BS4(r.text, "html.parser")
+        soup = _BS4(r.text, _PARSER)
         base = site.get("base_url","")
         arts = []
         if "link_pattern" in site or "link_patterns" in site or "link_pattern_re" in site:
@@ -600,10 +579,12 @@ def _sort_key(art):
 
 def run_scraper(mode="all"):
     """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
-    seen_ids    = _kv_smembers("seen_ids")
-    seen_urls   = _kv_smembers("seen_urls")   # URL deduplication – net jei pavadinimas pasikeitė
-    dates_cache = _kv_get("dates_cache") or {}
-    first_seen  = _kv_get("first_seen") or {}   # {id: iso} – kada MES pirmą kartą pamatėme
+    now_iso0 = datetime.now(timezone.utc).isoformat()
+    # Visi pradiniai KV skaitymai vienu pipeline request'u (vietoj 4-5 round-trip'ų)
+    pre = _kv_pipeline([["GET", "dates_cache"], ["GET", "first_seen"], ["GET", "scrape_status"]])
+    dates_cache   = _kv_json(pre[0], {})
+    first_seen    = _kv_json(pre[1], {})   # {id: iso} – kada MES pirmą kartą pamatėme
+    scrape_status = _kv_json(pre[2], {})   # {site: {"ok": iso, "n": count}} – saitų sveikata
     rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
     http_sites = [s for s in _SITES if s.get("method") == "http"] if mode != "rss"  else []
     all_arts   = []
@@ -611,11 +592,30 @@ def run_scraper(mode="all"):
         futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
         futs.update({ex.submit(_fetch_http, s): s for s in http_sites})
         for fut in as_completed(futs):
-            try: all_arts.extend(fut.result())
+            site = futs[fut]
+            try:
+                arts = fut.result()
+                all_arts.extend(arts)
+                if arts:
+                    scrape_status[site["name"]] = {"ok": now_iso0, "n": len(arts)}
             except: pass
+    # Naujumo patikra: SMISMEMBER tik kandidatams (vietoj viso seen_ids/seen_urls
+    # seto siuntimosi – setai per 30 d. užauga iki tūkstančių narių)
+    ids  = [a["id"] for a in all_arts]
+    urls = [a.get("url", "") for a in all_arts]
+    chk_cmds = [["SCARD", "seen_ids"], ["GET", "articles"], ["GET", "recent_ids"]]
+    if ids:
+        chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
+        chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
+    chk = _kv_pipeline(chk_cmds)
+    seen_count = int(chk[0] or 0)
+    existing   = _kv_json(chk[1], [])
+    raw_recent = _kv_json(chk[2], {})
+    id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
+    url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
     # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų)
-    new_ids = {a["id"] for a in all_arts
-               if a["id"] not in seen_ids and a.get("url","") not in seen_urls}
+    new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
+               if not int(s1 or 0) and not int(s2 or 0)}
 
     # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
     import re as _re
@@ -635,7 +635,7 @@ def run_scraper(mode="all"):
             sel = _SITE_IMG_SEL.get(art["site"], "")
             # 1. CSS selektorius pirmas (kai nurodytas) – tikslus herojinis paveikslas
             if sel:
-                el = _BS4(html, "html.parser").select_one(sel)
+                el = _BS4(html, _PARSER).select_one(sel)
                 if el:
                     src = el.get("data-src") or el.get("src", "")
                     if src and src.startswith("http"): return art["id"], src
@@ -647,8 +647,14 @@ def run_scraper(mode="all"):
         return art["id"], None
     # Saitams su image_selector – visada naudojame selektorių (ne RSS kūno atsitiktinį paveikslą)
     _IMG_SEL_SITES = {s["name"] for s in _SITES if s.get("og_image_fallback") and s.get("image_selector")}
+    # Jau išspręstus paveikslus imame iš KV (kitaip kiekvieną runą iš naujo
+    # siųstumės dešimtis straipsnių puslapių – netelpa į Vercel 10s)
+    _existing_img = {a["id"]: a.get("image") for a in existing if a.get("image")}
+    for a in all_arts:
+        if a["id"] in _existing_img and (not a.get("image") or a["site"] in _IMG_SEL_SITES):
+            a["image"] = _existing_img[a["id"]]
     arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
-                   (not a.get("image") or a["site"] in _IMG_SEL_SITES)]
+                   (not a.get("image") or (a["site"] in _IMG_SEL_SITES and a["id"] not in _existing_img))]
     if arts_no_img:
         with ThreadPoolExecutor(max_workers=6) as ex:
             for aid, img in ex.map(_fetch_og_image, arts_no_img):
@@ -698,23 +704,57 @@ def run_scraper(mode="all"):
     sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
                    [a for a in all_arts if a["id"] not in recent_ids])
     # Merge su esamais KV straipsniais (ne overwrite) – kad RSS ir HTTP scraperiai netrukdytų vienas kitam
-    existing = _kv_get("articles") or []
     merged = sorted_arts + [a for a in existing if a["id"] not in {x["id"] for x in sorted_arts}]
     merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
-    _kv_set("articles",   merged[:300], ex=86400*2)
-    _kv_set("recent_ids", recent_ids,  ex=3600*3)
+    # Slim saugojimas – be html_content/text (jie dideli; html atskirai raktuose html:{id})
+    slim = [_slim_art(a) for a in merged[:300]]
+
+    # recent_ids – KAUPIAMAS dict {id: iso}, ne perrašomas (kitaip "NAUJA" badge
+    # dingsta per 1-2 min, o ne po 3h; senas formatas list konvertuojamas)
+    if isinstance(raw_recent, list):
+        raw_recent = {i: now_iso for i in raw_recent}
+    cutoff3 = datetime.now(timezone.utc) - timedelta(hours=3)
+    def _fresh3(iso):
+        try: return datetime.fromisoformat(str(iso).replace("Z", "+00:00")) >= cutoff3
+        except: return False
+    rec_map = {i: t for i, t in raw_recent.items() if _fresh3(t)}
+    for rid in recent_ids:
+        rec_map.setdefault(rid, now_iso)
+
+    write_cmds = [
+        ["SET", "articles",   json.dumps(slim, ensure_ascii=False), "EX", 86400*2],
+        ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
+        ["SET", "articles_meta", json.dumps({"count": len(slim),
+                                             "first": slim[0]["id"] if slim else "",
+                                             "ts": now_iso}), "EX", 86400*2],
+        ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
+    ]
     if new_ids:
-        _kv_sadd("seen_ids", *list(new_ids))
+        write_cmds.append(["SADD", "seen_ids"] + list(new_ids))
+        write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
         new_urls = [a["url"] for a in all_arts if a["id"] in new_ids and a.get("url")]
         if new_urls:
-            _kv_sadd("seen_urls", *new_urls)
+            write_cmds.append(["SADD", "seen_urls"] + new_urls)
+            write_cmds.append(["EXPIRE", "seen_urls", 86400*30])
     if dates_changed:
-        _kv_set("dates_cache", dates_cache, ex=86400*30)
+        write_cmds.append(["SET", "dates_cache", json.dumps(dates_cache), "EX", 86400*30])
     if first_seen_changed:
-        _kv_set("first_seen", first_seen, ex=86400*30)
+        write_cmds.append(["SET", "first_seen", json.dumps(first_seen), "EX", 86400*30])
+    _kv_pipeline(write_cmds)
+
+    # RSS HTML – atskiruose raktuose html:{id}, kad articles sąrašas liktų mažas.
+    # EXISTS patikra + SET tik trūkstamiems; ribojam iki 60/run (likę – kitam runui).
+    html_arts = [a for a in all_arts if a.get("html_content")]
+    if html_arts:
+        ex_res = _kv_pipeline([["EXISTS", f"html:{a['id']}"] for a in html_arts])
+        to_store = [a for a, e in zip(html_arts, ex_res) if not int(e or 0)][:60]
+        for i in range(0, len(to_store), 20):   # dalimis – Upstash request dydžio limitas
+            _kv_pipeline([["SET", f"html:{a['id']}",
+                           json.dumps(a["html_content"], ensure_ascii=False), "EX", 86400*2]
+                          for a in to_store[i:i+20]])
 
     # Telegram – tik nauji IR sistemos pirmo pamatymo laikas ne senesnis nei 24h
-    if new_ids and seen_ids:
+    if new_ids and seen_count:
         tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         def _is_fresh(art):
             # Naudojame first_seen (kada MES pamatėme), ne RSS datą
@@ -853,6 +893,27 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 
 <script>
 let ALL = [], RECENT = new Set(), curSport = 'all', curSite = 'all';
+// HTML escape – scrape'intų saitų pavadinimai negali injectinti HTML/JS (XSS)
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// fetch su APP_TOKEN headeriu; gavus 401 – paprašo rakto ir bando dar kartą
+async function authFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers,
+    {'X-App-Token': localStorage.getItem('appToken') || ''});
+  let r = await fetch(url, opts);
+  if (r.status === 401) {
+    const t = prompt('Įveskite prieigos raktą (APP_TOKEN iš Vercel env):');
+    if (t) {
+      localStorage.setItem('appToken', t.trim());
+      opts.headers['X-App-Token'] = t.trim();
+      r = await fetch(url, opts);
+    }
+  }
+  return r;
+}
 function fmtDate(d) {
   if (!d) return '';
   try {
@@ -886,14 +947,14 @@ function renderCards() {
     const mCol = art.source === 'RSS' ? '#64748b' : (art.source === 'HTTP' ? '#3b82f6' : sCol);
     const sIcon = _SPORT_ICONS[art.sport] || '🏆';
     const badge = isR ? '<span class="badge">🆕 NAUJA</span>' : '';
-    const img   = art.image ? `<img src="${art.image}" loading="lazy" onerror="this.style.display='none'">` : '';
+    const img   = art.image ? `<img src="${esc(art.image)}" loading="lazy" onerror="this.style.display='none'">` : '';
     const id    = art.id;
-    html += `<div class="card ${isR?'recent':''}" data-sport="${art.sport}" data-site="${art.site}">
+    html += `<div class="card ${isR?'recent':''}" data-sport="${esc(art.sport)}" data-site="${esc(art.site)}">
   ${img}<div class="card-body">${badge}
-    <div class="meta"><span class="sport-tag" style="color:${sCol}">${sIcon} ${art.sport}</span>
-      <span class="site">${art.site}</span>
-      <span class="method" style="background:${mCol}22;color:${mCol}">${art.source}</span></div>
-    <h3><a href="${art.url}" target="_blank">${art.title}</a></h3>
+    <div class="meta"><span class="sport-tag" style="color:${sCol}">${sIcon} ${esc(art.sport)}</span>
+      <span class="site">${esc(art.site)}</span>
+      <span class="method" style="background:${mCol}22;color:${mCol}">${esc(art.source)}</span></div>
+    <h3><a href="${esc(art.url)}" target="_blank" rel="noopener">${esc(art.title)}</a></h3>
     <div class="date">${fmtDate(art.date)}</div>
     <button class="copy-btn" onclick="copyArt('${id}',this)">📋 Kopijuoti</button>
     <button class="post-btn" onclick="postArt('${id}',this)">📤 Įdėti</button>
@@ -1004,7 +1065,7 @@ async function uploadArticlePhoto() {
   const sport = art ? art.sport : '';
   const site  = art ? art.site  : '';
   try {
-    const r = await fetch('/api/upload-photo', {
+    const r = await authFetch('/api/upload-photo', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url: _pendingImageUrl, tags, sport, site})
@@ -1029,7 +1090,7 @@ async function searchPhotos() {
   if (!q) { grid.innerHTML = '<div class="photo-status">Įveskite paieškos frazę</div>'; return; }
   grid.innerHTML = '<div class="photo-status">⏳ Ieškoma...</div>';
   try {
-    const r = await fetch('/api/photos?q=' + encodeURIComponent(q));
+    const r = await authFetch('/api/photos?q=' + encodeURIComponent(q));
     const d = await r.json();
     if (!d.photos || !d.photos.length) {
       grid.innerHTML = '<div class="photo-status">Nuotraukų nerasta – pabandykite kitą frazę</div>';
@@ -1054,7 +1115,7 @@ async function selectPhoto(path, title) {
   _pendingPost = null;
   btn.textContent = '⏳ Įdedama...'; btn.disabled = true;
   try {
-    const r = await fetch('/api/post', {method:'POST',
+    const r = await authFetch('/api/post', {method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({id, photo_path: path, photo_title: title, photo_tags})});
     const d = await r.json();
@@ -1093,25 +1154,31 @@ function _notify(title, body, url) {
 
 async function _checkNew() {
   try {
-    const r = await fetch('/api/articles');
+    // Lengvas /api/version polling'as (~100 B); pilnas sąrašas – tik pasikeitus
+    const r = await fetch('/api/version');
     const d = await r.json();
-    const arts = d.articles || [];
     const recentIds = d.recent_ids || [];
-    const recentKey = recentIds.slice().sort().join(',');                        // tik nauji ID
-    const fullKey   = recentKey + '|' + arts.length + '|' + (arts[0]?.id||''); // UI stebėjimui
+    const recentKey = recentIds.slice().sort().join(',');
+    const fullKey   = recentKey + '|' + (d.count||0) + '|' + (d.first||'');
     const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
     if (fullKey !== _lastRecent && _lastRecent !== '') {
-      ALL = arts; RECENT = new Set(recentIds);
+      const prevSet = new Set((_lastRecent.split('|')[0] || '').split(',').filter(Boolean));
+      const r2 = await fetch('/api/articles');
+      const d2 = await r2.json();
+      ALL = d2.articles || []; RECENT = new Set(d2.recent_ids || recentIds);
       document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
       renderFilters(); renderCards();
-      // Notification TIKAI kai recent_ids pasikeitė – ne kai HTTP scraperis
-      // tik perstumia straipsnių sąrašą (arts.length / arts[0] pasikeičia)
-      const prevRecentKey = _lastRecent.split('|')[0];
-      if (recentKey && recentKey !== prevRecentKey) {
-        const alreadyNotified = localStorage.getItem('lastNotifiedRecent') === recentKey;
-        localStorage.setItem('lastNotifiedRecent', recentKey); // iš karto – multi-tab apsauga
-        if (!alreadyNotified) {
-          const notifArt = ALL.find(a => recentIds.includes(a.id)) || arts[0];
+      // Notification tik naujai ATSIRADUSIEMS recent ID – ne kai sąrašas
+      // susitraukia (pasibaigus 3h langui) ar persirikiuoja
+      const added = recentIds.filter(id => !prevSet.has(id));
+      if (added.length) {
+        // notifiedIds localStorage – multi-tab ir pakartotinių notificationų apsauga
+        const notified = new Set(JSON.parse(localStorage.getItem('notifiedIds') || '[]'));
+        const toNotify = added.filter(id => !notified.has(id));
+        added.forEach(id => notified.add(id));
+        localStorage.setItem('notifiedIds', JSON.stringify([...notified].slice(-100)));
+        if (toNotify.length) {
+          const notifArt = ALL.find(a => toNotify.includes(a.id));
           if (notifArt) {
             const icon = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒'}[notifArt.sport] || '🏆';
             _notify('🏆 Sporto naujienos', icon + ' ' + notifArt.title, notifArt.url || '/');
@@ -1127,7 +1194,7 @@ async function manualRefresh() {
   btn.textContent = '⏳ Tikrinama...'; btn.disabled = true;
   document.getElementById('meta').textContent = '⏳ Kreipiamasi į svetaines, palaukite...';
   try {
-    const r = await fetch('/api/refresh', {method:'POST'});
+    const r = await authFetch('/api/refresh', {method:'POST'});
     const d = await r.json();
     ALL    = d.articles || [];
     RECENT = new Set(d.recent_ids || []);
@@ -1182,24 +1249,22 @@ setInterval(_checkNew, 10000);
 # ── Service Worker ─────────────────────────────────────────────────
 _SW_JS = """
 // Sporto naujienų Service Worker
-let _swKnownKey = null;
+let _swPrevRecent = null;        // Set – žinomi recent ID
+let _swNotified   = new Set();   // jau parodytų notificationų ID
 
 async function swPoll() {
   try {
-    const r = await fetch('/api/articles?_sw=' + Date.now(), {cache: 'no-store'});
+    // Lengvas /api/version; pilnas /api/articles tik kai atsirado naujų ID
+    const r = await fetch('/api/version?_sw=' + Date.now(), {cache: 'no-store'});
     const d = await r.json();
-    const arts = d.articles || [];
     const recentIds = d.recent_ids || [];
-    const recentKey = recentIds.slice().sort().join(',');
-    const newKey    = recentKey + '|' + arts.length + '|' + (arts[0]?.id||'');
-
-    if (_swKnownKey !== null && newKey !== _swKnownKey) {
-      // Notification TIKAI kai recent_ids pasikeitė
-      const prevRecentKey = (_swKnownKey || '').split('|')[0];
-      if (recentKey && recentKey !== prevRecentKey) {
-        const notifArt = recentIds.length
-          ? arts.find(a => recentIds.includes(a.id))
-          : arts[0];
+    if (_swPrevRecent !== null) {
+      const added = recentIds.filter(id => !_swPrevRecent.has(id) && !_swNotified.has(id));
+      if (added.length) {
+        added.forEach(id => _swNotified.add(id));
+        const r2 = await fetch('/api/articles?_sw=' + Date.now(), {cache: 'no-store'});
+        const d2 = await r2.json();
+        const notifArt = (d2.articles || []).find(a => added.includes(a.id));
         if (notifArt) {
           const icon = {'futbolas':'⚽','krepšinis':'🏀','ledo ritulys':'🏒'}[notifArt.sport] || '🏆';
           await self.registration.showNotification('🏆 Sporto naujienos', {
@@ -1211,7 +1276,7 @@ async function swPoll() {
         }
       }
     }
-    _swKnownKey = newKey;
+    _swPrevRecent = new Set(recentIds);
   } catch(e) {}
 }
 
@@ -1221,7 +1286,13 @@ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('message', e => {
   if (!e.data) return;
   if (e.data.type === 'POLL') swPoll();
-  if (e.data.type === 'INIT')  { _swKnownKey = e.data.key || null; swPoll(); }
+  if (e.data.type === 'INIT') {
+    // key formatas: "id1,id2|count|firstId" – paimame tik recent ID dalį
+    const ids = String(e.data.key || '').split('|')[0].split(',').filter(Boolean);
+    _swPrevRecent = new Set(ids);
+    ids.forEach(id => _swNotified.add(id));
+    swPoll();
+  }
 });
 
 self.addEventListener('notificationclick', e => {
@@ -1249,20 +1320,60 @@ def service_worker():
 def serve_index():
     return Response(_INDEX_HTML, content_type="text/html; charset=utf-8")
 
+def _recent_list(raw):
+    """recent_ids KV formatas: dict {id: iso} (naujas) arba list (senas)."""
+    if isinstance(raw, dict): return list(raw.keys())
+    return raw or []
+
 @app.route("/api/articles", methods=["GET"])
 def articles():
-    data   = _kv_get("articles")   or []
-    recent = _kv_get("recent_ids") or []
-    return jsonify({"articles": data, "recent_ids": recent})
+    res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
+    data   = _kv_json(res[0], [])
+    recent = _recent_list(_kv_json(res[1], {}))
+    # Apsauga pereinamuoju laikotarpiu – sename formate buvo dideli html_content/text
+    slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
+    return jsonify({"articles": slim, "recent_ids": recent})
+
+@app.route("/api/version", methods=["GET"])
+def version():
+    """Mažytis atsakymas polling'ui – frontend pilną /api/articles siunčiasi
+    tik kai čia kažkas pasikeičia (vietoj pilno sąrašo kas 10s)."""
+    res    = _kv_pipeline([["GET", "articles_meta"], ["GET", "recent_ids"]])
+    meta   = _kv_json(res[0], {})
+    recent = _recent_list(_kv_json(res[1], {}))
+    return jsonify({"recent_ids": recent,
+                    "count": meta.get("count", 0),
+                    "first": meta.get("first", "")})
+
+@app.route("/api/scrape-status", methods=["GET"])
+def scrape_status_view():
+    """Saitų sveikata: kada kiekvienas saitas paskutinį kartą grąžino straipsnių."""
+    return jsonify(_kv_get("scrape_status") or {})
+
+def _allowed_hosts():
+    from urllib.parse import urlparse
+    hosts = set()
+    for s in _SITES:
+        for u in (s.get("url", ""), s.get("rss", ""), s.get("base_url", "")):
+            if u:
+                h = urlparse(u).netloc.lower()
+                hosts.add(h[4:] if h.startswith("www.") else h)
+    return hosts
 
 @app.route("/api/article-text", methods=["GET"])
 def article_text():
     url = request.args.get("url", "")
     if not url:
         return jsonify({"text": ""}), 400
+    # Tik mūsų saitų domenai – kitaip endpoint'as veiktų kaip atviras proxy
+    from urllib.parse import urlparse
+    host = urlparse(url).netloc.lower()
+    if host.startswith("www."): host = host[4:]
+    if host not in _allowed_hosts():
+        return jsonify({"text": "", "error": "Domenas neleidžiamas"}), 403
     try:
         r = _req.get(url, headers={"User-Agent": _UA}, timeout=8)
-        soup = _BS4(r.text, "html.parser")
+        soup = _BS4(r.text, _PARSER)
         for tag in soup(["script","style","nav","footer","header","aside",
                          "iframe","noscript","form","button"]):
             tag.decompose()
@@ -1304,12 +1415,15 @@ def article_text():
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
+    if not _auth_ok(): return _auth_fail()
     import traceback
     try:
         total, new_count = run_scraper()
-        data   = _kv_get("articles")   or []
-        recent = _kv_get("recent_ids") or []
-        return jsonify({"articles": data, "recent_ids": recent,
+        res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
+        data   = _kv_json(res[0], [])
+        recent = _recent_list(_kv_json(res[1], {}))
+        slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
+        return jsonify({"articles": slim, "recent_ids": recent,
                         "total": total, "new_count": new_count})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e),
@@ -1338,8 +1452,9 @@ def post():
         return Response("", headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Headers": "Content-Type, X-App-Token",
         })
+    if not _auth_ok(): return _auth_fail()
     import unicodedata as _ud
     _nfc = lambda s: _ud.normalize("NFC", s) if s else s
     payload     = request.get_json() or {}
@@ -1361,6 +1476,7 @@ def post():
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
     """Proxy: sportas.lt galerijos paieška. Grąžina photo sąrašą su path ir thumb."""
+    if not _auth_ok(): return _auth_fail()
     q = request.args.get("q", "")
     try:
         sess = _session()
@@ -1369,7 +1485,7 @@ def get_photos():
         # Paieškos parametras yra "query", ne "search"
         r = sess.get("https://www.sportas.lt/Admin/LoadPopup/UGallery/choicePhoto",
                      params={"query": q} if q else {}, timeout=12)
-        soup = _BS4(r.text, "html.parser")
+        soup = _BS4(r.text, _PARSER)
         import re as _re
         photos = []
         seen = set()
@@ -1394,6 +1510,7 @@ def get_photos():
 @app.route("/api/upload-photo", methods=["POST"])
 def upload_photo():
     """Parsisiunčia nuotrauką iš URL ir įkelia į sportas.lt galeriją per submitPhotos."""
+    if not _auth_ok(): return _auth_fail()
     import unicodedata as _ud
     payload = request.get_json() or {}
     image_url = payload.get("url", "")
@@ -1536,6 +1653,7 @@ def upload_photo():
 @app.route("/api/photo-debug/<int:photo_id>", methods=["GET"])
 def photo_debug(photo_id):
     """Randa photo kelią pagal ID – žiūri listing'e prieš/po mūsų ID."""
+    if not _auth_ok(): return _auth_fail()
     try:
         sess = _session()
         import re as _re
@@ -1573,6 +1691,7 @@ def photo_debug(photo_id):
 @app.route("/api/rss-debug", methods=["GET"])
 def rss_debug():
     """Rodo ką feedparser gauna iš RSS. ?url=https://..."""
+    if not _auth_ok(): return _auth_fail()
     rss_url = request.args.get("url", "https://www.lff.lt/feed/")
     try:
         feed = feedparser.parse(rss_url, request_headers={"User-Agent": _UA})
@@ -1592,7 +1711,7 @@ def rss_debug():
             if not raw_html and e.get("summary"):
                 raw_html = e.get("summary","")
             if raw_html:
-                pg = _BS4(raw_html, "html.parser")
+                pg = _BS4(raw_html, _PARSER)
                 it = pg.find("img")
                 info["has_content_img"] = (it.get("src") or it.get("data-src")) if it else None
             results.append(info)
@@ -1603,6 +1722,7 @@ def rss_debug():
 @app.route("/api/img-debug", methods=["GET"])
 def img_debug():
     """Testuoja og:image paėmimą iš URL. ?url=https://..."""
+    if not _auth_ok(): return _auth_fail()
     import re as _re
     url = request.args.get("url", "")
     if not url:
@@ -1623,7 +1743,7 @@ def img_debug():
             m = _re.search(pat, full_html)
             results[name] = m.group(1) if m else None
         # Pirma didelė img
-        pg = _BS4(full_html, "html.parser")
+        pg = _BS4(full_html, _PARSER)
         first_img = None
         for img in pg.find_all("img"):
             src = img.get("src","")
@@ -1641,6 +1761,7 @@ def img_debug():
 
 @app.route("/api/tg-test", methods=["GET"])
 def tg_test():
+    if not _auth_ok(): return _auth_fail()
     result = tg_send("🧪 Testas – Telegram pranešimai veikia!")
     return jsonify({"telegram_response": result,
                     "token_set": bool(TG_TOKEN),
@@ -1649,6 +1770,7 @@ def tg_test():
 @app.route("/api/debug-fetch", methods=["GET"])
 def debug_fetch():
     """Testuoja _fetch_http konkrečiai svetainei ir grąžina rezultatus arba klaidą."""
+    if not _auth_ok(): return _auth_fail()
     import traceback
     name = request.args.get("site", "LTOK")
     site = next((s for s in _SITES if s["name"] == name), None)
@@ -1665,7 +1787,7 @@ def debug_fetch():
         html_len = len(r.text)
         from bs4 import BeautifulSoup as _BSd
         import re as _red
-        soup = _BSd(r.text, "html.parser")
+        soup = _BSd(r.text, _PARSER)
         base = site.get("base_url", "")
         pat_re = _red.compile(site["link_pattern_re"]) if "link_pattern_re" in site else None
         title_sel = site.get("title_selector", "")
@@ -1688,6 +1810,7 @@ def debug_fetch():
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
     """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""
+    if not _auth_ok(): return _auth_fail()
     try:
         sess = _session()
         if not SPORTAS_USER:

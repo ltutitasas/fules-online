@@ -1,8 +1,8 @@
 name: Scrape naujienos
 
+# Schedule išjungtas 2026-06-11: senas run.py turi savo pasenusią saitų kopiją
+# ir rašo seną KV formatą – konfliktuotų su run_http.py/api/index.py.
 on:
-  schedule:
-    - cron: '*/20 * * * *'
   workflow_dispatch:
 
 jobs:
