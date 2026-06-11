@@ -632,17 +632,17 @@ def run_scraper(mode="all"):
         try:
             r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=2 if mode=="rss" else 4)
             html = r.text
-            # 1. og:image / itemprop / twitter:image meta
-            for pat in _OG_PATS:
-                m = _re.search(pat, html)
-                if m: return art["id"], m.group(1)
-            # 2. CSS selektorius (saituose su image_selector)
             sel = _SITE_IMG_SEL.get(art["site"], "")
+            # 1. CSS selektorius pirmas (kai nurodytas) – tikslus herojinis paveikslas
             if sel:
                 el = _BS4(html, "html.parser").select_one(sel)
                 if el:
                     src = el.get("data-src") or el.get("src", "")
                     if src and src.startswith("http"): return art["id"], src
+            # 2. og:image / itemprop / twitter:image meta (kai nėra selektoriaus)
+            for pat in _OG_PATS:
+                m = _re.search(pat, html)
+                if m: return art["id"], m.group(1)
         except: pass
         return art["id"], None
     # Saitams su image_selector – visada naudojame selektorių (ne RSS kūno atsitiktinį paveikslą)
