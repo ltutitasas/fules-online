@@ -198,7 +198,12 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     vėl suges (senas bug'as: badge dingdavo per 1-2 min vietoj 3h).
 11. **`anthropic` išimtas iš requirements.txt** (AI išjungtas) – įjungiant `_ai_enrich`,
     paketą reikia grąžinti.
-12. **`lxml` su fallback** – jei aplinkoje nėra, kodas pats persijungia į `html.parser`.
+12. **`lxml` su fallback** – Vercel'yje lxml realiai NEUŽSIKRAUNA (nors requirements.txt yra),
+    kodas persijungia į `html.parser`. GitHub Actions ir lokaliai lxml veikia.
+    Patikrinti: `/api/health` rodo aktyvų parserį.
+13. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
+    `curl -s https://api.github.com/repos/ltutitasas/fules-online/commits/<sha>/status`
+    („success" = deploy gyvas; „failure" = build krito ir gyvas liko SENAS deploy!).
 
 ## Debug įrankiai
 
