@@ -6,16 +6,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
 
 # Bendra saitų konfigūracija – api/_sites_config.py (pabraukimas = Vercel
-# neeksponuoja kaip atskiros funkcijos, bet įtraukia į bundle)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _sites_config import SITES as _SITES, slim_art as _slim_art
+# neeksponuoja kaip atskiros funkcijos, bet įtraukia į bundle).
+# try/except – kad importo bėda negriautų viso app; klaida matoma /api/health
+_IMPORT_ERR = ""
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _sites_config import SITES as _SITES, slim_art as _slim_art
+except Exception as _e:
+    _IMPORT_ERR = f"{type(_e).__name__}: {_e}"
+    _SITES = []
+    _SLIM_FIELDS = ("site","sport","title","url","date","image","source","id","text_selector")
+    def _slim_art(a):
+        return {k: a[k] for k in _SLIM_FIELDS if a.get(k)}
 
-# lxml ~5-10x greitesnis už html.parser; fallback jei Vercel jo neturėtų
+# lxml ~5-10x greitesnis; fallback į html.parser jei Vercel lxml neturi
 try:
     import lxml  # noqa: F401
     _PARSER = "lxml"
-except ImportError:
-    _PARSER = _PARSER
+except Exception:
+    _PARSER = "html.parser"
 
 app = Flask(__name__)
 
@@ -1345,6 +1354,14 @@ def version():
     return jsonify({"recent_ids": recent,
                     "count": meta.get("count", 0),
                     "first": meta.get("first", "")})
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Diagnostika: ar modulis pilnai užsikrovė, koks parseris, kiek saitų."""
+    return jsonify({"ok": not _IMPORT_ERR, "import_error": _IMPORT_ERR,
+                    "sites": len(_SITES), "parser": _PARSER,
+                    "python": sys.version.split()[0],
+                    "kv": bool(KV_URL), "app_token_set": bool(APP_TOKEN)})
 
 @app.route("/api/scrape-status", methods=["GET"])
 def scrape_status_view():
