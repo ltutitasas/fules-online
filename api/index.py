@@ -596,7 +596,12 @@ def run_scraper(mode="all"):
     first_seen    = _kv_json(pre[1], {})   # {id: iso} – kada MES pirmą kartą pamatėme
     scrape_status = _kv_json(pre[2], {})   # {site: {"ok": iso, "n": count}} – saitų sveikata
     rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
-    http_sites = [s for s in _SITES if s.get("method") == "http"] if mode != "rss"  else []
+    # rss režime papildomai imami HTTP saitai su also_vercel (pvz. LKL, kurį
+    # lkl.lt blokuoja GitHub Actions IP) – fetch vyksta lygiagrečiai, telpa į 10s
+    if mode == "rss":
+        http_sites = [s for s in _SITES if s.get("method") == "http" and s.get("also_vercel")]
+    else:
+        http_sites = [s for s in _SITES if s.get("method") == "http"]
     all_arts   = []
     with ThreadPoolExecutor(max_workers=16) as ex:
         futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
