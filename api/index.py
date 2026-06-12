@@ -905,6 +905,11 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 <div class="photo-modal" id="photoModal" onclick="if(event.target===this)closePhotoModal()">
   <div class="photo-box">
     <h2>🖼️ Pasirinkite vedančiąją nuotrauką</h2>
+    <div style="margin-bottom:14px">
+      <div style="font-size:.75em;color:#64748b;margin-bottom:5px">📝 Straipsnio pavadinimas (galite pakoreguoti prieš dedant):</div>
+      <input type="text" id="postTitle"
+             style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;font-size:.95em;box-sizing:border-box">
+    </div>
     <div class="art-img-section" id="artImgSection">
       <div class="lbl">📷 Straipsnio nuotrauka:</div>
       <div class="art-img-row">
@@ -1069,7 +1074,8 @@ let _pendingImageUrl = null;
 async function postArt(id, btn) {
   _pendingPost = {id, btn};
   const art = ALL.find(a => a.id === id);
-  const words = art ? art.title.replace(/[^\\w\\sšžčęėįųūŠŽČĘĖĮŲŪ]/g,'').split(/\\s+/).slice(0,3).join(' ') : '';
+  // Pilnas pavadinimas redagavimui (į sportas.lt eis būtent šis tekstas)
+  document.getElementById('postTitle').value = art ? art.title : '';
   // Straipsnio nuotrauka
   _pendingImageUrl = (art && art.image) ? art.image : null;
   const sec = document.getElementById('artImgSection');
@@ -1082,10 +1088,10 @@ async function postArt(id, btn) {
   } else {
     sec.style.display = 'none';
   }
-  document.getElementById('photoSearchInput').value = words;
-  document.getElementById('photoGrid').innerHTML = '<div class="photo-status">⏳ Ieškoma...</div>';
+  // Paieškos laukas paliekamas tuščias – pagal title pradžią galerijoje nieko nerandama
+  document.getElementById('photoSearchInput').value = '';
+  document.getElementById('photoGrid').innerHTML = '<div class="photo-status">Įveskite paieškos frazę ir spauskite 🔍</div>';
   document.getElementById('photoModal').classList.add('open');
-  if (words) await searchPhotos();
 }
 function closePhotoModal() {
   document.getElementById('photoModal').classList.remove('open');
@@ -1150,12 +1156,13 @@ async function selectPhoto(path, title) {
   if (!_pendingPost) return;
   const {id, btn} = _pendingPost;
   const photo_tags = document.getElementById('photoTags')?.value.trim() || '';
+  const custom_title = document.getElementById('postTitle').value.trim();
   _pendingPost = null;
   btn.textContent = '⏳ Įdedama...'; btn.disabled = true;
   try {
     const r = await authFetch('/api/post', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({id, photo_path: path, photo_title: title, photo_tags})});
+      body: JSON.stringify({id, photo_path: path, photo_title: title, photo_tags, title: custom_title})});
     const d = await r.json();
     if (d.ok) { btn.textContent = '✅ Įdėta! ' + (d.message||''); btn.classList.add('posted'); }
     else { btn.textContent = '❌ ' + (d.error || d.message || 'Klaida'); btn.disabled = false;
@@ -1523,6 +1530,10 @@ def post():
     article  = next((a for a in articles if a["id"] == aid), None)
     if not article:
         return jsonify({"ok": False, "error": "Nerasta"}), 404
+    # Vartotojo pakoreguotas pavadinimas iš modalo (jei pateiktas)
+    custom_title = _nfc(payload.get("title", "").strip())
+    if custom_title:
+        article = dict(article, title=custom_title)
     try:
         ok, msg = _do_post(article, photo_path=photo_path, photo_title=photo_title, photo_tags=photo_tags)
         return jsonify({"ok": ok, "message": msg, "_debug_photo_tags": photo_tags})
