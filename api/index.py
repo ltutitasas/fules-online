@@ -251,6 +251,8 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         enriched = _ai_enrich(title, text or _html_to_text(html_content))
         ai_tags  = enriched.get("tags", "")
     else:
+        html_body = ""   # būtina inicializuoti – jei fetch žemiau nepavyks/neras
+                         # konteinerio, kitaip UnboundLocalError (buvo Top Lygos bug'as)
         # Jei tekstas tuščias – bandome gauti iš straipsnio URL
         if not text and article.get("url"):
             try:
@@ -291,6 +293,10 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
         else:
             enriched = _ai_enrich(title, text)
             ai_tags  = enriched.get("tags", "")
+    # Be teksto nepublikuojame – aiški žinutė vietoj tuščio straipsnio sportas.lt
+    if not html_body:
+        return False, ("Straipsnis dar be teksto (šaltinis paskelbė tik antraštę) – "
+                       "pabandykite vėliau, kai tekstas atsiras")
     # Suliejame AI tags + photo modal gaires
     combined = ", ".join(filter(None, [ai_tags, photo_tags]))
     tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
