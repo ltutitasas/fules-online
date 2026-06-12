@@ -32,7 +32,10 @@ SITES = [
     {"name":"Lengvoji atletika", "sport":"kitas sportas", "sportas_source":"17",   "rss":"https://lengvoji.lt/feed/", "og_image_fallback": True},
     {"name":"LTU Aquatics",      "sport":"kitas sportas", "sportas_source":"56",   "rss":"https://ltuaquatics.com/feed/", "og_image_fallback": True},
     # ── HTTP saitai (scrape'ina GitHub Actions run_http.py) ─────────
-    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http",
+    # renotify_on_rename: toplyga.lt rungtynių kortelę "X – Y (GYVAI)" pasibaigus
+    # rungtynėms PERVADINA į rezultatą tuo pačiu URL – pervadinimas čia yra nauja
+    # naujiena, todėl seen_urls apsauga šiam saitui netaikoma
+    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http", "renotify_on_rename": True,
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
      "base_url":"https://toplyga.lt"},

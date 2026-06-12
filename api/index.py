@@ -643,9 +643,11 @@ def run_scraper(mode="all"):
     existing = [a for a in existing if _url_ok(a.get("url", ""))]
     id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
     url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
-    # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų)
+    # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų).
+    # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
+    _RENAME_OK = {s["name"] for s in _SITES if s.get("renotify_on_rename")}
     new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
-               if not int(s1 or 0) and not int(s2 or 0)}
+               if not int(s1 or 0) and (not int(s2 or 0) or a["site"] in _RENAME_OK)}
 
     # og:image fallback lygiagrečiai (LFF ir kt. saituose su og_image_fallback=True)
     import re as _re
@@ -733,8 +735,14 @@ def run_scraper(mode="all"):
                     except: pass
     sorted_arts = ([a for a in all_arts if a["id"] in recent_ids] +
                    [a for a in all_arts if a["id"] not in recent_ids])
-    # Merge su esamais KV straipsniais (ne overwrite) – kad RSS ir HTTP scraperiai netrukdytų vienas kitam
-    merged = sorted_arts + [a for a in existing if a["id"] not in {x["id"] for x in sorted_arts}]
+    # Merge su esamais KV straipsniais (ne overwrite) – kad RSS ir HTTP scraperiai netrukdytų vienas kitam.
+    # Dedup ir pagal URL – pervadintas straipsnis (tas pats URL, kitas title/id)
+    # PAKEIČIA seną įrašą, o ne sukuria dublikatą
+    _fetched_ids  = {x["id"] for x in sorted_arts}
+    _fetched_urls = {x["url"] for x in sorted_arts if x.get("url")}
+    merged = sorted_arts + [a for a in existing
+                            if a["id"] not in _fetched_ids
+                            and a.get("url", "") not in _fetched_urls]
     merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
     # Slim saugojimas – be html_content/text (jie dideli; html atskirai raktuose html:{id})
     slim = [_slim_art(a) for a in merged[:300]]

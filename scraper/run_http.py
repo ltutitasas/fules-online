@@ -212,8 +212,10 @@ def main():
     raw_recent = kv_json(chk[2], {})
     id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
     url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
+    # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
+    _RENAME_OK = {s["name"] for s in HTTP_SITES if s.get("renotify_on_rename")}
     new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
-               if not int(s1 or 0) and not int(s2 or 0)}
+               if not int(s1 or 0) and (not int(s2 or 0) or a["site"] in _RENAME_OK)}
     print(f"\n📊 Iš viso: {len(all_arts)} | Naujų: {len(new_ids)}")
 
     # og:image fallback – tik straipsniams, kurių paveikslas dar neišspręstas KV
@@ -248,8 +250,12 @@ def main():
     # Merge VISŲ atneštų straipsnių (ne tik naujų) – jei lygiagretus RSS runas
     # netyčia perrašytų mūsų įrašus, kitas runas juos atkurtų
     new_arts = [a for a in all_arts if a["id"] in new_ids]
-    fetched_ids = {a["id"] for a in all_arts}
-    merged = all_arts + [a for a in existing if a["id"] not in fetched_ids]
+    fetched_ids  = {a["id"] for a in all_arts}
+    # Dedup ir pagal URL – pervadintas straipsnis pakeičia seną įrašą (ne dublikatas)
+    fetched_urls = {a["url"] for a in all_arts if a.get("url")}
+    merged = all_arts + [a for a in existing
+                         if a["id"] not in fetched_ids
+                         and a.get("url", "") not in fetched_urls]
     merged.sort(key=_sort_key, reverse=True)
     slim = [slim_art(a) for a in merged[:300]]
 

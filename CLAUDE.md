@@ -115,6 +115,12 @@ Lietuva Basketball, BC Rytas
   pirma <img> nepatikima – ilguose straipsniuose paima vidinę nuotrauką)
 - `text_selector` – CSS selektorius tekstui (pvz. BC Kibirkštis `.entry-summary`
   kad nedubliuotų title/autoriaus)
+- `also_vercel: True` – HTTP saitą scrape'ina IR Vercel /api/cron-rss (LKL atvejis –
+  lkl.lt blokuoja GitHub Actions IP)
+- `renotify_on_rename: True` – pervadintas straipsnis (tas pats URL, naujas title)
+  laikomas NAUJA naujiena (Top Lyga: "X – Y (GYVAI)" → rezultatas tuo pačiu URL).
+  Be šio flag'o seen_urls apsauga pervadinimus nutyli. Merge visada dedup'ina pagal
+  URL – pervadinimas pakeičia seną įrašą, dublikato nelieka.
 
 ### Naujo saito pridėjimas (dažniausias darbas!)
 1. Į `SITES` (failas `api/_sites_config.py`) pridėti dict su `rss` (jei WordPress – beveik visada yra `/feed/`)
