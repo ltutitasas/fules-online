@@ -626,6 +626,15 @@ def run_scraper(mode="all"):
     seen_count = int(chk[0] or 0)
     existing   = _kv_json(chk[1], [])
     raw_recent = _kv_json(chk[2], {})
+    # Duomenų higiena: išmetame įrašus su blogai suformuotu URL (pvz. buvęs
+    # run_http bug'as "toplyga.ltrungtynes-..." be /) – domenas turi būti mūsų saitų
+    from urllib.parse import urlparse as _up
+    _hosts = _allowed_hosts()
+    def _url_ok(u):
+        if not u: return True
+        h = _up(u).netloc.lower()
+        return (h[4:] if h.startswith("www.") else h) in _hosts
+    existing = [a for a in existing if _url_ok(a.get("url", ""))]
     id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
     url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
     # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų)

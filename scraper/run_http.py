@@ -124,7 +124,8 @@ def fetch_http(site):
                 title = title_el.get_text(strip=True) if title_el else ""
                 link_el = container.select_one(sel["link"])
                 href = link_el.get("href", "") if link_el else ""
-                url = href if href.startswith("http") else (base + href if href else "")
+                # santykiniam href be / pridedam / (toplyga.lt "rungtynes-gyvai/..." atvejis)
+                url = href if href.startswith("http") else (base + (href if href.startswith("/") else "/" + href) if href else "")
                 img_el = container.select_one(sel.get("image", "img"))
                 image = None
                 if img_el:
