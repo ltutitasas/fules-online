@@ -1273,6 +1273,10 @@ loadData().then(() => {
   _updateNotifBtn();
 });
 setInterval(_checkNew, 10000);
+// Grįžus į tab'ą – tikriname IŠKART (fone naršyklė taimerius užmigdo,
+// be šito atsinaujinimas matomas tik po ~10s ar paspaudus mygtuką)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkNew(); });
+window.addEventListener('focus', _checkNew);
 </script>
 </body></html>"""
 
@@ -1341,6 +1345,13 @@ self.addEventListener('notificationclick', e => {
 """
 
 # ── Routes ─────────────────────────────────────────────────────────
+@app.after_request
+def _no_cache(resp):
+    # Be šito mobilios naršyklės heuristiškai cache'ina /api/articles ir
+    # šviežiai atidarytas puslapis rodo senas naujienas
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
 @app.route("/sw.js")
 def service_worker():
     return Response(_SW_JS, content_type="application/javascript",
