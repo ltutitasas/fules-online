@@ -297,9 +297,14 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     if not html_body:
         return False, ("Straipsnis dar be teksto (šaltinis paskelbė tik antraštę) – "
                        "pabandykite vėliau, kai tekstas atsiras")
-    # Suliejame AI tags + photo modal gaires
+    # Suliejame AI tags + photo modal gaires.
+    # sportas.lt tagų su kabutėmis neišsaugo – jas šaliname („Žalgiris“ → Žalgiris).
+    # Nuotraukos pavadinime (leadPhoto[title]/photo_title) kabutės lieka kaip įvesta.
+    import re as _re_t
+    def _clean_tag(t):
+        return _re_t.sub(r'[„“”"«»]', '', t).strip()
     combined = ", ".join(filter(None, [ai_tags, photo_tags]))
-    tags_list = list(dict.fromkeys(t.strip() for t in combined.split(",") if t.strip()))
+    tags_list = list(dict.fromkeys(ct for t in combined.split(",") if (ct := _clean_tag(t))))
 
     if not SPORTAS_USER:
         return False, f"SPORTAS_USER env var nenustatytas | photo_tags={repr(photo_tags)} | ai_tags={repr(ai_tags)} | tags_list={tags_list}"
