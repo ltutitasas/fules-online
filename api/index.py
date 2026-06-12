@@ -1232,6 +1232,9 @@ async function _checkNew() {
       }
     }
     _lastRecent = fullKey;
+    // Sinchronizuojame "matyta" būseną – kitaip refresh'as po ilgai atidaryto
+    // tab'o rodo "rasta naujų nuo paskutinio apsilankymo" apie jau matytas
+    localStorage.setItem('lastSeenRecent', fullKey);
   } catch {}
 }
 async function manualRefresh() {
@@ -1277,12 +1280,15 @@ function _updateNotifBtn() {
 }
 loadData().then(() => {
   _lastRecent = [...RECENT].sort().join(',') + '|' + ALL.length + '|' + (ALL[0]?.id||'');
-  // Praleistos notifikacijos: lyginame su paskutiniu apsilankymu
+  // Praleistos notifikacijos: tik ID, kurių NEBUVO paskutinio matymo momentu
+  // (ne visas RECENT sąrašas – jis apima 3h langą, kurį galbūt jau matėme)
   const stored = localStorage.getItem('lastSeenRecent') || '';
-  if (stored && stored !== _lastRecent && RECENT.size > 0) {
+  const storedSet = new Set((stored.split('|')[0] || '').split(',').filter(Boolean));
+  const missed = [...RECENT].filter(id => !storedSet.has(id));
+  if (stored && missed.length > 0) {
     const now = new Date().toLocaleString('lt-LT', {timeZone:'Europe/Vilnius'});
     document.getElementById('meta').textContent = '🆕 Nauja naujiena! ' + now + ' | ' + ALL.length + ' straipsnių';
-    _notify('🏆 Sporto naujienos', `Rasta ${RECENT.size} nauja(-ų) nuo paskutinio apsilankymo`, '/');
+    _notify('🏆 Sporto naujienos', `Rasta ${missed.length} nauja(-ų) nuo paskutinio apsilankymo`, '/');
   }
   localStorage.setItem('lastSeenRecent', _lastRecent);
   _updateNotifBtn();
