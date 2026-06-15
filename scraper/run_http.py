@@ -215,7 +215,9 @@ def main():
     if ids:
         chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
         chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
+    chk_cmds.append(["GET", "articles_hash"])   # bandwidth dedup – paskutinis
     chk = kv_pipeline(chk_cmds)
+    prev_articles_hash = chk[-1]
     seen_count = int(chk[0] or 0)
     existing   = kv_json(chk[1], [])
     raw_recent = kv_json(chk[2], {})
@@ -273,6 +275,8 @@ def main():
                          and a.get("url", "") not in fetched_urls]
     merged.sort(key=_sort_key, reverse=True)
     slim = [slim_art(a) for a in merged[:300]]
+    slim_json = json.dumps(slim, ensure_ascii=False)
+    new_articles_hash = hashlib.md5(slim_json.encode()).hexdigest()
 
     # recent_ids – KAUPIAMAS dict {id: iso} (badge + naršyklės notificationai,
     # dabar veikia ir HTTP saitams)
@@ -293,11 +297,19 @@ def main():
     ]
     # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
     # seen_ids egzistuoja – skaitymas pataikė į blogą backend'ą, neperrašome archyvo.
-    if not (not existing and seen_count > 0):
-        write_cmds.append(["SET", "articles", json.dumps(slim, ensure_ascii=False), "EX", 86400*2])
+    _read_consistent = not (not existing and seen_count > 0)
+    if _read_consistent and new_articles_hash != prev_articles_hash:
+        # Turinys pasikeitė → perrašom. Jei nepasikeitė – tik TTL pratęsiam (žemiau).
+        write_cmds.append(["SET", "articles", slim_json, "EX", 86400*2])
+        write_cmds.append(["SET", "articles_hash", new_articles_hash, "EX", 86400*2])
         write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
                                              "first": slim[0]["id"] if slim else "",
                                              "ts": now_iso}), "EX", 86400*2])
+    elif _read_consistent:
+        # Niekas nepasikeitė – nerašom ~100KB bloko, tik pratęsiam TTL (bandwidth).
+        write_cmds.append(["EXPIRE", "articles", 86400*2])
+        write_cmds.append(["EXPIRE", "articles_hash", 86400*2])
+        write_cmds.append(["EXPIRE", "articles_meta", 86400*2])
     if new_ids:
         write_cmds.append(["SADD", "seen_ids"] + [a["id"] for a in new_arts])
         write_cmds.append(["EXPIRE", "seen_ids", 86400*30])

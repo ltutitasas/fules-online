@@ -642,7 +642,9 @@ def run_scraper(mode="all"):
     if ids:
         chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
         chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
+    chk_cmds.append(["GET", "articles_hash"])   # bandwidth dedup – paskutinis
     chk = _kv_pipeline(chk_cmds)
+    prev_articles_hash = chk[-1]
     seen_count = int(chk[0] or 0)
     existing   = _kv_json(chk[1], [])
     raw_recent = _kv_json(chk[2], {})
@@ -766,6 +768,8 @@ def run_scraper(mode="all"):
     merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
     # Slim saugojimas – be html_content/text (jie dideli; html atskirai raktuose html:{id})
     slim = [_slim_art(a) for a in merged[:300]]
+    slim_json = json.dumps(slim, ensure_ascii=False)
+    new_articles_hash = hashlib.md5(slim_json.encode()).hexdigest()
 
     # recent_ids – KAUPIAMAS dict {id: iso}, ne perrašomas (kitaip "NAUJA" badge
     # dingsta per 1-2 min, o ne po 3h; senas formatas list konvertuojamas)
@@ -786,11 +790,21 @@ def run_scraper(mode="all"):
     # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
     # seen_ids egzistuoja (seen_count>0) – skaitymas pataikė į blogą backend'ą,
     # neperrašome archyvo tuščiu/sutrumpintu sąrašu.
-    if not (not existing and seen_count > 0):
-        write_cmds.append(["SET", "articles", json.dumps(slim, ensure_ascii=False), "EX", 86400*2])
+    _read_consistent = not (not existing and seen_count > 0)
+    if _read_consistent and new_articles_hash != prev_articles_hash:
+        # Turinys pasikeitė → perrašom (~100KB). BANDWIDTH dedup: jei nepasikeitė,
+        # nerašom viso bloko, tik atnaujinam TTL pigia EXPIRE komanda (žemiau).
+        write_cmds.append(["SET", "articles", slim_json, "EX", 86400*2])
+        write_cmds.append(["SET", "articles_hash", new_articles_hash, "EX", 86400*2])
         write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
                                              "first": slim[0]["id"] if slim else "",
                                              "ts": now_iso}), "EX", 86400*2])
+    elif _read_consistent:
+        # Niekas nepasikeitė – tik pratęsiam TTL (kad articles neišsitrintų po 2 d.),
+        # nerašydami viso ~100KB bloko (taupom 10GB/mėn bandwidth).
+        write_cmds.append(["EXPIRE", "articles", 86400*2])
+        write_cmds.append(["EXPIRE", "articles_hash", 86400*2])
+        write_cmds.append(["EXPIRE", "articles_meta", 86400*2])
     if new_ids:
         write_cmds.append(["SADD", "seen_ids"] + list(new_ids))
         write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
@@ -1213,12 +1227,11 @@ async function _initSW() {
     await navigator.serviceWorker.ready;
     const sw = _swReg.active;
     if (sw) sw.postMessage({type: 'INIT', key: _lastRecent});
-    // Kas 60s žadiname SW pollingui (veikia net kai tab fone). Buvo 30s –
-    // padidinta, kad mažiau degintų Upstash komandų kvotą.
+    // Kas 30s žadiname SW pollingui (veikia net kai tab fone).
     setInterval(() => {
       const s = _swReg?.active;
       if (s) s.postMessage({type: 'POLL'});
-    }, 60000);
+    }, 30000);
   } catch(e) { console.log('SW klaida:', e); }
 }
 
@@ -1326,7 +1339,7 @@ loadData().then(() => {
   localStorage.setItem('lastSeenRecent', _lastRecent);
   _updateNotifBtn();
 });
-setInterval(_checkNew, 30000);   // buvo 10s – padidinta dėl Upstash kvotos
+setInterval(_checkNew, 10000);   // 10s – greitas naujienų matymas (version mažytis)
 // Grįžus į tab'ą – tikriname IŠKART (fone naršyklė taimerius užmigdo,
 // be šito atsinaujinimas matomas tik po ~10s ar paspaudus mygtuką)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkNew(); });
@@ -1446,7 +1459,7 @@ def articles():
         slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
         return {"articles": slim, "recent_ids": recent}
     try:
-        return jsonify(_cached_kv("articles", 8, _fetch))
+        return jsonify(_cached_kv("articles", 5, _fetch))
     except Exception:
         return jsonify({"articles": [], "recent_ids": []})
 
@@ -1461,7 +1474,7 @@ def version():
         return {"recent_ids": recent, "count": meta.get("count", 0),
                 "first": meta.get("first", "")}
     try:
-        return jsonify(_cached_kv("version", 8, _fetch))
+        return jsonify(_cached_kv("version", 2, _fetch))
     except Exception:
         return jsonify({"recent_ids": [], "count": 0, "first": ""})
 
