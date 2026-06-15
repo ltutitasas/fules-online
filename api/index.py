@@ -103,7 +103,16 @@ def _kv_pipeline(cmds, timeout=8):
     r = _req.post(f"{KV_URL}/pipeline",
                   headers={"Authorization": f"Bearer {KV_TOKEN}"},
                   json=cmds, timeout=timeout)
-    return [item.get("result") for item in r.json()]
+    r.raise_for_status()   # 4xx/5xx → exception
+    data = r.json()
+    if not isinstance(data, list):   # Upstash klaida = dict {"error":...}
+        raise RuntimeError(f"KV pipeline klaida: {str(data)[:200]}")
+    # Upstash grąžina HTTP 200 net kai komanda atmesta (pvz. "max requests limit
+    # exceeded") – klaida slypi item viduje. Nebetylim: keliam exception.
+    for item in data:
+        if isinstance(item, dict) and item.get("error"):
+            raise RuntimeError(f"KV komandos klaida: {str(item['error'])[:200]}")
+    return [item.get("result") if isinstance(item, dict) else None for item in data]
 
 def _kv_json(raw, default):
     """Pipeline GET rezultatas (string arba None) → Python objektas."""
@@ -637,6 +646,12 @@ def run_scraper(mode="all"):
     seen_count = int(chk[0] or 0)
     existing   = _kv_json(chk[1], [])
     raw_recent = _kv_json(chk[2], {})
+    # SAUGIKLIS nuo nenuoseklaus KV skaitymo (tuščia/bloga replika): seen_ids ir
+    # articles turi būti suderinti. Jei seen_ids "tuščias", o articles pilnas –
+    # skaitymas pataikė į blogą backend'ą; praleidžiam runą be rašymo/Telegram,
+    # kitaip viskas atrodytų "nauja" (spam + articles perrašymas tuščiu).
+    if seen_count == 0 and len(existing) > 10:
+        return len(existing), 0
     # Duomenų higiena: išmetame įrašus su blogai suformuotu URL (pvz. buvęs
     # run_http bug'as "toplyga.ltrungtynes-..." be /) – domenas turi būti mūsų saitų
     from urllib.parse import urlparse as _up
@@ -765,13 +780,17 @@ def run_scraper(mode="all"):
         rec_map.setdefault(rid, now_iso)
 
     write_cmds = [
-        ["SET", "articles",   json.dumps(slim, ensure_ascii=False), "EX", 86400*2],
         ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
-        ["SET", "articles_meta", json.dumps({"count": len(slim),
-                                             "first": slim[0]["id"] if slim else "",
-                                             "ts": now_iso}), "EX", 86400*2],
         ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
     ]
+    # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
+    # seen_ids egzistuoja (seen_count>0) – skaitymas pataikė į blogą backend'ą,
+    # neperrašome archyvo tuščiu/sutrumpintu sąrašu.
+    if not (not existing and seen_count > 0):
+        write_cmds.append(["SET", "articles", json.dumps(slim, ensure_ascii=False), "EX", 86400*2])
+        write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
+                                             "first": slim[0]["id"] if slim else "",
+                                             "ts": now_iso}), "EX", 86400*2])
     if new_ids:
         write_cmds.append(["SADD", "seen_ids"] + list(new_ids))
         write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
@@ -805,14 +824,22 @@ def run_scraper(mode="all"):
             if not d: return True   # pirmas kartas – tikrai naujas
             try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
             except: return True
-        new_arts = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)][:5]
+        fresh_cands = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]
+        # Atominis vartas nuo dublikatų: SADD notified_ids grąžina 1 tik tam, kurį
+        # ŠIS runas pirmas pažymi. Pakartotiniai/lygiagretūs runai gauna 0 → nebesiunčia.
+        notify_arts = []
+        if fresh_cands:
+            sadd_res = _kv_pipeline([["SADD", "notified_ids", a["id"]] for a in fresh_cands])
+            _kv_pipeline([["EXPIRE", "notified_ids", 86400*2]])
+            notify_arts = [a for a, r in zip(fresh_cands, sadd_res) if int(r or 0) == 1]
+        new_arts = notify_arts[:5]
         if new_arts:
             lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
             for a in new_arts:
                 sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
                 icon = sport_icon.get(a.get("sport",""), "🏆")
                 lines.append(f'{icon} <a href="{a["url"]}">{a["title"]}</a>')
-            extra = len([a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]) - 5
+            extra = len(notify_arts) - 5
             if extra > 0:
                 lines.append(f"\n+{extra} daugiau naujienų")
             lines.append("\n🔗 fules-online.vercel.app")
@@ -1186,11 +1213,12 @@ async function _initSW() {
     await navigator.serviceWorker.ready;
     const sw = _swReg.active;
     if (sw) sw.postMessage({type: 'INIT', key: _lastRecent});
-    // Kas 30s žadiname SW pollingui (veikia net kai tab fone)
+    // Kas 60s žadiname SW pollingui (veikia net kai tab fone). Buvo 30s –
+    // padidinta, kad mažiau degintų Upstash komandų kvotą.
     setInterval(() => {
       const s = _swReg?.active;
       if (s) s.postMessage({type: 'POLL'});
-    }, 30000);
+    }, 60000);
   } catch(e) { console.log('SW klaida:', e); }
 }
 
@@ -1298,7 +1326,7 @@ loadData().then(() => {
   localStorage.setItem('lastSeenRecent', _lastRecent);
   _updateNotifBtn();
 });
-setInterval(_checkNew, 10000);
+setInterval(_checkNew, 30000);   // buvo 10s – padidinta dėl Upstash kvotos
 // Grįžus į tab'ą – tikriname IŠKART (fone naršyklė taimerius užmigdo,
 // be šito atsinaujinimas matomas tik po ~10s ar paspaudus mygtuką)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkNew(); });
@@ -1392,25 +1420,50 @@ def _recent_list(raw):
     if isinstance(raw, dict): return list(raw.keys())
     return raw or []
 
+# Serverinis cache polling endpointams – tas pats šiltas Vercel instance'as
+# kelis greitus pollus aptarnauja iš atminties, nebadydamas KV (taupo Upstash
+# komandų kvotą). Be to – jei KV grąžina klaidą (kvota), atiduodam paskutinį gerą.
+_RESP_CACHE = {}   # {raktas: (ts, data)}
+def _cached_kv(key, ttl, fetch):
+    now = time.time()
+    hit = _RESP_CACHE.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    try:
+        data = fetch()
+        _RESP_CACHE[key] = (now, data)
+        return data
+    except Exception:
+        if hit: return hit[1]   # KV klaida (pvz. kvota) – atiduodam paskutinį gerą
+        raise
+
 @app.route("/api/articles", methods=["GET"])
 def articles():
-    res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
-    data   = _kv_json(res[0], [])
-    recent = _recent_list(_kv_json(res[1], {}))
-    # Apsauga pereinamuoju laikotarpiu – sename formate buvo dideli html_content/text
-    slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
-    return jsonify({"articles": slim, "recent_ids": recent})
+    def _fetch():
+        res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
+        data   = _kv_json(res[0], [])
+        recent = _recent_list(_kv_json(res[1], {}))
+        slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
+        return {"articles": slim, "recent_ids": recent}
+    try:
+        return jsonify(_cached_kv("articles", 8, _fetch))
+    except Exception:
+        return jsonify({"articles": [], "recent_ids": []})
 
 @app.route("/api/version", methods=["GET"])
 def version():
     """Mažytis atsakymas polling'ui – frontend pilną /api/articles siunčiasi
     tik kai čia kažkas pasikeičia (vietoj pilno sąrašo kas 10s)."""
-    res    = _kv_pipeline([["GET", "articles_meta"], ["GET", "recent_ids"]])
-    meta   = _kv_json(res[0], {})
-    recent = _recent_list(_kv_json(res[1], {}))
-    return jsonify({"recent_ids": recent,
-                    "count": meta.get("count", 0),
-                    "first": meta.get("first", "")})
+    def _fetch():
+        res    = _kv_pipeline([["GET", "articles_meta"], ["GET", "recent_ids"]])
+        meta   = _kv_json(res[0], {})
+        recent = _recent_list(_kv_json(res[1], {}))
+        return {"recent_ids": recent, "count": meta.get("count", 0),
+                "first": meta.get("first", "")}
+    try:
+        return jsonify(_cached_kv("version", 8, _fetch))
+    except Exception:
+        return jsonify({"recent_ids": [], "count": 0, "first": ""})
 
 @app.route("/api/health", methods=["GET"])
 def health():

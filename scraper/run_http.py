@@ -47,7 +47,16 @@ def kv_pipeline(cmds, timeout=15):
     if not cmds: return []
     def _do():
         r = _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=timeout, json=cmds)
-        return [item.get("result") for item in r.json()]
+        r.raise_for_status()   # 4xx/5xx → retry, paskui exception
+        data = r.json()
+        if not isinstance(data, list):   # Upstash klaida = dict {"error":...}
+            raise RuntimeError(f"KV pipeline klaida: {str(data)[:200]}")
+        # HTTP 200 net kai komanda atmesta (pvz. "max requests limit exceeded") –
+        # klaida slypi item viduje. Keliam exception (retry, paskui matomas fail).
+        for item in data:
+            if isinstance(item, dict) and item.get("error"):
+                raise RuntimeError(f"KV komandos klaida: {str(item['error'])[:200]}")
+        return [item.get("result") if isinstance(item, dict) else None for item in data]
     return _kv_retry(_do)
 
 def kv_json(raw, default):
@@ -210,6 +219,12 @@ def main():
     seen_count = int(chk[0] or 0)
     existing   = kv_json(chk[1], [])
     raw_recent = kv_json(chk[2], {})
+    # SAUGIKLIS nuo nenuoseklaus KV skaitymo (tuščia/bloga replika): jei seen_ids
+    # "tuščias", o articles pilnas – skaitymas pataikė į blogą backend'ą; praleidžiam
+    # runą be rašymo/Telegram (kitaip viskas atrodytų nauja → spam).
+    if seen_count == 0 and len(existing) > 10:
+        print("⚠️  Nenuoseklus KV skaitymas (seen_ids=0, bet articles pilnas) – praleidžiam runą")
+        return
     id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
     url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
     # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
@@ -273,13 +288,16 @@ def main():
 
     print("\n💾 Merge į Vercel KV...")
     write_cmds = [
-        ["SET", "articles",   json.dumps(slim, ensure_ascii=False), "EX", 86400*2],
         ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
-        ["SET", "articles_meta", json.dumps({"count": len(slim),
-                                             "first": slim[0]["id"] if slim else "",
-                                             "ts": now_iso}), "EX", 86400*2],
         ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
     ]
+    # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
+    # seen_ids egzistuoja – skaitymas pataikė į blogą backend'ą, neperrašome archyvo.
+    if not (not existing and seen_count > 0):
+        write_cmds.append(["SET", "articles", json.dumps(slim, ensure_ascii=False), "EX", 86400*2])
+        write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
+                                             "first": slim[0]["id"] if slim else "",
+                                             "ts": now_iso}), "EX", 86400*2])
     if new_ids:
         write_cmds.append(["SADD", "seen_ids"] + [a["id"] for a in new_arts])
         write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
@@ -307,6 +325,12 @@ def main():
 
     fresh = [a for a in new_arts if is_fresh(a)]
     if fresh and seen_count:  # seen_ids tuščias = pirmas paleidimas, nesiunčiame
+        # Atominis vartas nuo dublikatų: SADD notified_ids grąžina 1 tik tam, kurį
+        # ŠIS runas pirmas pažymi. Pakartotiniai/lygiagretūs runai gauna 0 → nesiunčia.
+        sadd_res = kv_pipeline([["SADD", "notified_ids", a["id"]] for a in fresh])
+        kv_pipeline([["EXPIRE", "notified_ids", 86400*2]])
+        fresh = [a for a, r in zip(fresh, sadd_res) if int(r or 0) == 1]
+    if fresh and seen_count:
         sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
         lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
         for a in fresh[:5]:
