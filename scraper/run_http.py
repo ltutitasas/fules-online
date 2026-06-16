@@ -74,22 +74,28 @@ def tg_send(text):
 def art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
 
-def fetch_has_text(url):
-    """True, jei straipsnio puslapyje JAU yra reali ataskaita (bent vienas pastraipos
-    elementas >200 simb.). Top Lyga be ataskaitos = tik trumpi meniu/tab'ai (<35 simb.),
-    su ataskaita = pastraipos 250–360 simb. Klaida → False (kitas runas pakartos)."""
+def fetch_text_sig(url):
+    """Trumpas straipsnio TURINIO parašas (md5 8 simb. iš pastraipų >100 simb.).
+    Pasikeitus turiniui (be teksto → anonsas → ataskaita) parašas keičiasi → naujas
+    id → renotify (naujas pranešimas). Tuščia/klaida → '' (id lieka be žymės).
+    Meniu/nav (<35 simb.) į parašą nepatenka; gyvas mačo komentaras lieka JS
+    widget'uose (ne <p>/<li>), tad parašas gyvo mačo metu stabilus (= anonsas)."""
     try:
         r = _req.get(url, headers={"User-Agent": UA, "Accept-Encoding": "gzip, deflate"}, timeout=8)
         soup = BeautifulSoup(r.text, PARSER)
         for tag in soup(["script","style","nav","footer","header","aside",
                          "iframe","noscript","form","button"]):
             tag.decompose()
+        blocks = []
         for el in (soup.body or soup).find_all(["p","h2","h3","h4","li"]):
-            if len(" ".join(el.get_text(" ", strip=True).split())) > 200:
-                return True
-        return False
+            txt = " ".join(el.get_text(" ", strip=True).split())
+            if len(txt) > 100:
+                blocks.append(txt)
+        if not blocks:
+            return ""
+        return hashlib.md5("\n".join(blocks).encode()).hexdigest()[:8]
     except Exception:
-        return False
+        return ""
 
 _HTTP_HEADERS = {
     "User-Agent": UA,
@@ -225,34 +231,22 @@ def main():
             except Exception as e:
                 print(f"  ❌ {s['name']}: {e}")
 
-    # renotify_on_text (Top Lyga): aptinkam, ar straipsnyje JAU yra ataskaitos tekstas,
-    # ir tai įtraukiam į id. Tekstui atsiradus id pasikeičia → renotify (antras
-    # pranešimas „atsirado tekstas"). Be teksto id lieka toks pat kaip dabar.
-    # STICKY: kartą aptiktą tekstą laikom KV sete (toplyga_texted) – apsauga nuo
-    # nestabilaus ištraukimo "mirgėjimo" (spam) + nebereikia iš naujo siųstis puslapių.
+    # renotify_on_text (Top Lyga): į id įtraukiam straipsnio TURINIO parašą. Turiniui
+    # pasikeitus (be teksto → anonsas → ataskaita) id keičiasi → renotify (naujas
+    # pranešimas tai pačiai naujienai). Toplyga tekstas keičiasi retai, o gyvas
+    # komentaras parašo neveikia, tad spam'o nebus. Be turinio id lieka kaip dabar.
     _RENOTEXT = {s["name"] for s in HTTP_SITES if s.get("renotify_on_text")}
     txt_arts = [a for a in all_arts if a["site"] in _RENOTEXT and a.get("url")]
     if txt_arts:
-        turls = [a["url"] for a in txt_arts]
-        texted_res = kv_pipeline([["SMISMEMBER", "toplyga_texted"] + turls])[0] or [0]*len(turls)
-        already = {u for u, m in zip(turls, texted_res) if int(m or 0)}
-        to_fetch = [a for a in txt_arts if a["url"] not in already]
-        fetched = {}
-        if to_fetch:
-            print(f"📝 Teksto patikra ({len(to_fetch)} nauji, {len(already)} jau su tekstu)...")
-            with ThreadPoolExecutor(max_workers=6) as ex:
-                for a, ht in zip(to_fetch, ex.map(lambda a: fetch_has_text(a["url"]), to_fetch)):
-                    fetched[a["url"]] = ht
-        new_texted = []
-        for a in txt_arts:
-            if a["url"] in already or fetched.get(a["url"]):
-                a["id"] = art_id(a["url"], a["title"] + "|TXT")
-                if a["url"] not in already:
-                    new_texted.append(a["url"])
-        if new_texted:
-            print(f"  📝 naujai su tekstu: {len(new_texted)}")
-            kv_pipeline([["SADD", "toplyga_texted"] + new_texted,
-                         ["EXPIRE", "toplyga_texted", 86400*30]])
+        print(f"📝 Teksto parašas ({len(txt_arts)} str.)...")
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            sigs = list(ex.map(lambda a: fetch_text_sig(a["url"]), txt_arts))
+        n = 0
+        for a, sig in zip(txt_arts, sigs):
+            if sig:
+                a["id"] = art_id(a["url"], a["title"] + "|" + sig)
+                n += 1
+        print(f"  📝 su turiniu: {n}/{len(txt_arts)}")
 
     # Naujumo patikra: SMISMEMBER tik kandidatams + esami articles/recent vienu pipeline
     ids  = [a["id"] for a in all_arts]
