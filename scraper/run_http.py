@@ -74,6 +74,23 @@ def tg_send(text):
 def art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
 
+def fetch_has_text(url):
+    """True, jei straipsnio puslapyje JAU yra reali ataskaita (bent vienas pastraipos
+    elementas >200 simb.). Top Lyga be ataskaitos = tik trumpi meniu/tab'ai (<35 simb.),
+    su ataskaita = pastraipos 250–360 simb. Klaida → False (kitas runas pakartos)."""
+    try:
+        r = _req.get(url, headers={"User-Agent": UA, "Accept-Encoding": "gzip, deflate"}, timeout=8)
+        soup = BeautifulSoup(r.text, PARSER)
+        for tag in soup(["script","style","nav","footer","header","aside",
+                         "iframe","noscript","form","button"]):
+            tag.decompose()
+        for el in (soup.body or soup).find_all(["p","h2","h3","h4","li"]):
+            if len(" ".join(el.get_text(" ", strip=True).split())) > 200:
+                return True
+        return False
+    except Exception:
+        return False
+
 _HTTP_HEADERS = {
     "User-Agent": UA,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -207,6 +224,35 @@ def main():
                 print(f"  ✅ {s['name']}: {len(arts)}")
             except Exception as e:
                 print(f"  ❌ {s['name']}: {e}")
+
+    # renotify_on_text (Top Lyga): aptinkam, ar straipsnyje JAU yra ataskaitos tekstas,
+    # ir tai įtraukiam į id. Tekstui atsiradus id pasikeičia → renotify (antras
+    # pranešimas „atsirado tekstas"). Be teksto id lieka toks pat kaip dabar.
+    # STICKY: kartą aptiktą tekstą laikom KV sete (toplyga_texted) – apsauga nuo
+    # nestabilaus ištraukimo "mirgėjimo" (spam) + nebereikia iš naujo siųstis puslapių.
+    _RENOTEXT = {s["name"] for s in HTTP_SITES if s.get("renotify_on_text")}
+    txt_arts = [a for a in all_arts if a["site"] in _RENOTEXT and a.get("url")]
+    if txt_arts:
+        turls = [a["url"] for a in txt_arts]
+        texted_res = kv_pipeline([["SMISMEMBER", "toplyga_texted"] + turls])[0] or [0]*len(turls)
+        already = {u for u, m in zip(turls, texted_res) if int(m or 0)}
+        to_fetch = [a for a in txt_arts if a["url"] not in already]
+        fetched = {}
+        if to_fetch:
+            print(f"📝 Teksto patikra ({len(to_fetch)} nauji, {len(already)} jau su tekstu)...")
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                for a, ht in zip(to_fetch, ex.map(lambda a: fetch_has_text(a["url"]), to_fetch)):
+                    fetched[a["url"]] = ht
+        new_texted = []
+        for a in txt_arts:
+            if a["url"] in already or fetched.get(a["url"]):
+                a["id"] = art_id(a["url"], a["title"] + "|TXT")
+                if a["url"] not in already:
+                    new_texted.append(a["url"])
+        if new_texted:
+            print(f"  📝 naujai su tekstu: {len(new_texted)}")
+            kv_pipeline([["SADD", "toplyga_texted"] + new_texted,
+                         ["EXPIRE", "toplyga_texted", 86400*30]])
 
     # Naujumo patikra: SMISMEMBER tik kandidatams + esami articles/recent vienu pipeline
     ids  = [a["id"] for a in all_arts]

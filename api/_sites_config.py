@@ -35,7 +35,10 @@ SITES = [
     # renotify_on_rename: toplyga.lt rungtynių kortelę "X – Y (GYVAI)" pasibaigus
     # rungtynėms PERVADINA į rezultatą tuo pačiu URL – pervadinimas čia yra nauja
     # naujiena, todėl seen_urls apsauga šiam saitui netaikoma
-    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http", "renotify_on_rename": True,
+    # renotify_on_text: toplyga.lt pirma įdeda tik pavadinimą, vėliau – ataskaitos
+    # tekstą. Aptikus, kad tekstas atsirado, id pasikeičia → antras pranešimas.
+    {"name":"Top Lyga", "sport":"futbolas", "sportas_source":"1056", "method":"http",
+     "renotify_on_rename": True, "renotify_on_text": True,
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
      "base_url":"https://toplyga.lt"},
