@@ -43,7 +43,7 @@ SITES = [
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
      "base_url":"https://toplyga.lt"},
-    {"name":"Žalgiris futbolas", "sport":"futbolas", "sportas_source":"302", "method":"http",
+    {"name":"Žalgiris futbolas", "sport":"futbolas", "sportas_source":"382", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=futbolas",
      "selectors":{"articles":"article",
                   "title":"div.font-semibold a",
