@@ -856,7 +856,7 @@ def run_scraper(mode="all"):
             extra = len(notify_arts) - 5
             if extra > 0:
                 lines.append(f"\n+{extra} daugiau naujienų")
-            lines.append("\n🔗 fules-online.vercel.app")
+            lines.append("\n🔗 fules-online2.vercel.app")
             tg_send("\n".join(lines))
 
     return len(sorted_arts), len(new_ids)
@@ -1372,7 +1372,7 @@ async function swPoll() {
             body:     icon + ' ' + notifArt.title,
             tag:      'sporto-naujienos',
             renotify: true,
-            data:     { url: notifArt.url || 'https://fules-online.vercel.app/' },
+            data:     { url: notifArt.url || 'https://fules-online2.vercel.app/' },
           });
         }
       }
@@ -1398,11 +1398,11 @@ self.addEventListener('message', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || 'https://fules-online.vercel.app/';
+  const url = e.notification.data?.url || 'https://fules-online2.vercel.app/';
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
       for (const c of cs) {
-        if (c.url.startsWith('https://fules-online.vercel.app') && 'focus' in c)
+        if (c.url.startsWith('https://fules-online2.vercel.app') && 'focus' in c)
           return c.focus();
       }
       return self.clients.openWindow(url);

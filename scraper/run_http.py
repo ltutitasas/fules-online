@@ -388,7 +388,7 @@ def main():
         for a in fresh[:5]:
             lines.append(f'{sport_icon.get(a.get("sport",""),"🏆")} <a href="{a["url"]}">{a["title"]}</a>')
         if len(fresh) > 5: lines.append(f"\n+{len(fresh)-5} daugiau")
-        lines.append("\n🔗 fules-online.vercel.app")
+        lines.append("\n🔗 fules-online2.vercel.app")
         tg_send("\n".join(lines))
         print(f"📨 Telegram: {len(fresh)} naujos")
 
