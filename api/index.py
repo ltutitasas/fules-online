@@ -1227,11 +1227,11 @@ async function _initSW() {
     await navigator.serviceWorker.ready;
     const sw = _swReg.active;
     if (sw) sw.postMessage({type: 'INIT', key: _lastRecent});
-    // Kas 30s žadiname SW pollingui (veikia net kai tab fone).
+    // Kas 60s žadiname SW pollingui (veikia net kai tab fone).
     setInterval(() => {
       const s = _swReg?.active;
       if (s) s.postMessage({type: 'POLL'});
-    }, 30000);
+    }, 60000);
   } catch(e) { console.log('SW klaida:', e); }
 }
 
@@ -1339,7 +1339,7 @@ loadData().then(() => {
   localStorage.setItem('lastSeenRecent', _lastRecent);
   _updateNotifBtn();
 });
-setInterval(_checkNew, 10000);   // 10s – greitas naujienų matymas (version mažytis)
+setInterval(_checkNew, 30000);   // 30s – KV kvotos taupymas (atidarius/grįžus į tab'ą tikrinama iškart)
 // Grįžus į tab'ą – tikriname IŠKART (fone naršyklė taimerius užmigdo,
 // be šito atsinaujinimas matomas tik po ~10s ar paspaudus mygtuką)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkNew(); });
@@ -1474,7 +1474,7 @@ def version():
         return {"recent_ids": recent, "count": meta.get("count", 0),
                 "first": meta.get("first", "")}
     try:
-        return jsonify(_cached_kv("version", 2, _fetch))
+        return jsonify(_cached_kv("version", 10, _fetch))
     except Exception:
         return jsonify({"recent_ids": [], "count": 0, "first": ""})
 
