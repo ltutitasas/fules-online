@@ -163,6 +163,9 @@ def fetch_http(site):
                 if img_el:
                     src = img_el.get("src") or img_el.get("data-src", "")
                     image = (base + src if src.startswith("/") else src) or None
+                    rep = site.get("img_replace")
+                    if image and rep:
+                        image = image.replace(rep[0], rep[1])
                 if title and url:
                     articles.append({
                         "site": site["name"], "sport": site.get("sport", ""),

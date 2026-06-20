@@ -42,6 +42,8 @@ SITES = [
      "renotify_on_rename": True, "renotify_on_text": True,
      "url":"https://toplyga.lt/naujienos",
      "selectors":{"articles":"div.new","title":"a.title","link":"a.title","image":"img"},
+     # sąrašo kortelė rodo -medium (pixeliuota, ~13KB); -featured ~5x didesnė, geresnė
+     "img_replace":["-medium.jpg", "-featured.jpg"],
      "base_url":"https://toplyga.lt"},
     {"name":"Žalgiris futbolas", "sport":"futbolas", "sportas_source":"382", "method":"http",
      "url":"https://zalgiris.lt/naujienos?category=futbolas",

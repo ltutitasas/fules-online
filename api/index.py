@@ -591,6 +591,9 @@ def _fetch_http(site):
                 if i_el:
                     src = i_el.get("src") or i_el.get("data-src","")
                     image = (base+src if src.startswith("/") else src) or None
+                    rep = site.get("img_replace")
+                    if image and rep:
+                        image = image.replace(rep[0], rep[1])
                 if title and url:
                     arts.append({"site":site["name"],"sport":site.get("sport",""),
                         "title":title,"url":url,"date":"","image":image,
