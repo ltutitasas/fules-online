@@ -1562,7 +1562,11 @@ def refresh():
     if not _auth_ok(): return _auth_fail()
     import traceback
     try:
-        total, new_count = run_scraper()
+        # mode="rss": tik RSS (+ also_vercel HTTP) saitai. HTTP saitų su
+        # renotify_on_text (Top Lyga) Vercel inline _fetch_http NEgali atkartoti
+        # turinio parašo, tad jų ID skiriasi nuo run_http.py → senos naujienos
+        # iškildavo kaip NAUJA su einamuoju laiku. Top Lyga lieka GitHub Actions žinioje.
+        total, new_count = run_scraper(mode="rss")
         res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
         data   = _kv_json(res[0], [])
         recent = _recent_list(_kv_json(res[1], {}))
