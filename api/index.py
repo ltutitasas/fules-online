@@ -947,6 +947,7 @@ h1{text-align:center;color:#e2e8f0;margin-bottom:8px;font-size:1.8em}
 <div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px">
   <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()" style="margin:0">🔄 Atnaujinti</button>
   <button class="refresh-btn" id="notifBtn" onclick="askNotif()" style="margin:0">🔔 Pranešimai</button>
+  <button class="refresh-btn" id="tlHistBtn" onclick="openTlHistory()" style="margin:0">📜 Top Lyga pakeitimai</button>
 </div>
 <div class="filters" id="filters"></div>
 <div class="grid" id="grid"><div class="loading">⏳ Kraunamos naujienos...</div></div>
@@ -1305,6 +1306,14 @@ async function manualRefresh() {
     document.getElementById('meta').textContent = '❌ Klaida: ' + e.message;
   }
   btn.textContent = '🔄 Atnaujinti'; btn.disabled = false;
+}
+
+function openTlHistory() {
+  // Top Lyga versijų istorija – atidaro /api/tl-history su saugomu APP_TOKEN
+  let t = localStorage.getItem('appToken') || '';
+  if (!t) { t = (prompt('Įveskite prieigos raktą (APP_TOKEN iš Vercel env):')||'').trim();
+            if (t) localStorage.setItem('appToken', t); }
+  window.open('/api/tl-history?token=' + encodeURIComponent(t), '_blank');
 }
 async function askNotif() {
   const btn = document.getElementById('notifBtn');

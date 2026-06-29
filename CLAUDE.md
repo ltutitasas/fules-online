@@ -82,6 +82,7 @@ throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – 
 | `first_seen` | JSON dict | 30 d. | {id: iso} – kada MES pirmą kartą pamatėme |
 | `recent_ids` | JSON **dict** | 3 h | {id: iso} – KAUPIAMAS (ne perrašomas!), įrašai senesni nei 3h išmetami kiekvieno runo metu |
 | `scrape_status` | JSON dict | 7 d. | {site: {ok, n}} – kada saitas paskutinį kartą grąžino straipsnių (`/api/scrape-status`) |
+| `tl_hist` | JSON dict | 7 d. | {url: {title, full:[sakiniai], versions:[{ts,title,added,removed,title_from}]}} – Top Lyga (renotify_on_text saitų) versijų istorija „kas pasikeitė". Rašo TIK `run_http.py` ir TIK kai straipsnis pakito (id ∈ new_ids); rodo `/api/tl-history`. Max 25 URL / 15 versijų |
 
 Visi KV skaitymai/rašymai scraperiuose eina per **pipeline** (`_kv_pipeline` /
 `kv_pipeline`) – vienas HTTP request'as vietoj 5-6 round-trip'ų.
@@ -171,7 +172,7 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 
 ### Auth (APP_TOKEN)
 - Publikavimo/admin endpointai (`/api/post`, `/api/upload-photo`, `/api/photos`,
-  `/api/sources`, `/api/refresh`, `/api/photo-debug`, `/api/tg-test`, visi debug)
+  `/api/sources`, `/api/refresh`, `/api/photo-debug`, `/api/tg-test`, `/api/tl-history`, visi debug)
   reikalauja `X-App-Token` headerio arba `?token=` (curl'ui), kai Vercel env
   nustatytas `APP_TOKEN`. **Kol APP_TOKEN nenustatytas – viskas atvira (kaip anksčiau).**
 - Frontend tokeną laiko `localStorage.appToken`; gavęs 401 paprašo per `prompt()`.
@@ -218,6 +219,10 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 - `/api/scrape-status` – kada kiekvienas saitas paskutinį kartą grąžino straipsnių
   (jei saito nėra arba `ok` senas – saitas tyliai miręs, tikrinti debug-fetch).
 - `/api/version` – greitas patikrinimas ar scraperiai gyvi (`ts` articles_meta viduje).
+- `/api/tl-history` – Top Lyga versijų istorija: kiekvieno mačo laiko juosta su diff'u
+  (➕ pridėti / ➖ pašalinti sakiniai, 📝 pavadinimo pakeitimai X→Y). Token'u apsaugotas.
+  Duomenis kaupia `run_http.py` į `tl_hist` (tik pokyčio metu, 0 naujų HTTP – tekstas
+  imamas iš jau atsisiųsto `fetch_text_sig` puslapio). Frontend mygtukas „📜 Top Lyga pakeitimai".
 - GitHub Actions logs: https://github.com/ltutitasas/fules-online/actions
 - cron-job.org dashboard – execution history (200 OK / 204 No Content = OK)
 
