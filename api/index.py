@@ -1959,6 +1959,67 @@ def debug_fetch():
     except Exception as e:
         return jsonify({"site": name, "error": str(e), "trace": traceback.format_exc()[-800:]}), 500
 
+@app.route("/api/tl-history", methods=["GET"])
+def tl_history():
+    """Top Lyga (ir kitų renotify_on_text saitų) versijų istorija – rodo, kas
+    pasikeitė kiekvieną kartą (pridėti/pašalinti sakiniai, pavadinimo pakeitimai).
+    Duomenis kaupia run_http.py į KV raktą tl_hist (tik pokyčio metu)."""
+    if not _auth_ok(): return _auth_fail()
+    from html import escape as _esc
+    hist = _kv_get("tl_hist") or {}
+    # Rikiuojam URL pagal vėliausią versiją (naujausi viršuje)
+    items = sorted(hist.items(),
+                   key=lambda kv: (kv[1]["versions"][-1]["ts"] if kv[1].get("versions") else ""),
+                   reverse=True)
+
+    def _fmt_ts(iso):
+        try:
+            from datetime import datetime as _dt
+            return _dt.fromisoformat(str(iso).replace("Z", "+00:00")).strftime("%m-%d %H:%M")
+        except Exception:
+            return str(iso)[:16]
+
+    rows = []
+    for url, e in items:
+        vers = list(reversed(e.get("versions", [])))   # naujausia versija viršuje
+        vblocks = []
+        for i, v in enumerate(vers):
+            badge = "🆕 pradinė" if i == len(vers) - 1 and not v.get("title_from") else f"#{len(vers)-i}"
+            head = f'<span class="ts">{_fmt_ts(v.get("ts"))}</span> <span class="badge">{badge}</span>'
+            if v.get("title_from"):
+                head += (f'<div class="ren">📝 pavadinimas: <s>{_esc(v["title_from"])}</s> '
+                         f'→ <b>{_esc(v.get("title",""))}</b></div>')
+            parts = [head]
+            for s in v.get("added", []):
+                parts.append(f'<div class="add">➕ {_esc(s)}</div>')
+            for s in v.get("removed", []):
+                parts.append(f'<div class="rem">➖ {_esc(s)}</div>')
+            if not v.get("added") and not v.get("removed") and not v.get("title_from"):
+                parts.append('<div class="non">(turinys nepakito)</div>')
+            vblocks.append(f'<div class="ver">{"".join(parts)}</div>')
+        rows.append(f'<div class="art"><a class="title" href="{_esc(url)}" target="_blank">'
+                    f'{_esc(e.get("title","(be pavadinimo)"))}</a>'
+                    f'<div class="cnt">{len(e.get("versions",[]))} versijų</div>'
+                    f'{"".join(vblocks)}</div>')
+
+    body = "".join(rows) or '<p class="empty">Dar nėra įrašų – istorija pildosi nuo įdiegimo, kai Top Lyga straipsnis atsinaujina.</p>'
+    html = f"""<!doctype html><html lang="lt"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Top Lyga – kas pasikeitė</title><style>
+body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:0 auto;padding:16px;background:#0f1115;color:#e6e6e6}}
+h1{{font-size:20px}} .empty{{color:#888}}
+.art{{background:#1a1d24;border:1px solid #2a2e38;border-radius:12px;padding:14px 16px;margin:14px 0}}
+.title{{font-size:16px;font-weight:600;color:#7fb3ff;text-decoration:none}}
+.cnt{{color:#888;font-size:12px;margin:2px 0 8px}}
+.ver{{border-left:3px solid #2a2e38;padding:6px 0 6px 12px;margin:8px 0}}
+.ts{{color:#9aa;font-size:13px}} .badge{{color:#888;font-size:12px;margin-left:6px}}
+.ren{{margin:4px 0;font-size:14px}} .ren s{{color:#c66}}
+.add{{color:#6ddf8e;margin:3px 0;font-size:14px;line-height:1.4}}
+.rem{{color:#e07a7a;margin:3px 0;font-size:14px;line-height:1.4;text-decoration:line-through;opacity:.7}}
+.non{{color:#777;font-size:13px;font-style:italic}}
+</style></head><body><h1>⚽ Top Lyga – kas pasikeitė</h1>{body}</body></html>"""
+    return app.response_class(html, mimetype="text/html")
+
 @app.route("/api/sources", methods=["GET"])
 def get_sources():
     """Grąžina sportas.lt šaltinių sąrašą su ID ir mūsų svetainių priskyrimą."""

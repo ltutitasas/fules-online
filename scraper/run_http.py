@@ -4,7 +4,7 @@ Paleidžiamas per GitHub Actions (workflow_dispatch) via cron-job.org.
 Naudoja merge strategiją – neperrašo RSS straipsnių KV.
 Saitų sąrašas – bendras sites_config.py (repo šaknyje)."""
 
-import json, os, sys, hashlib, time, requests as _req
+import json, os, sys, hashlib, time, re as _re_mod, requests as _req
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -75,11 +75,13 @@ def art_id(url, title):
     return hashlib.md5(f"{url}{title}".encode()).hexdigest()
 
 def fetch_text_sig(url):
-    """Trumpas straipsnio TURINIO parašas (md5 8 simb. iš pastraipų >100 simb.).
+    """Grąžina (parašas, pastraipos). Parašas – md5 8 simb. iš pastraipų >100 simb.
     Pasikeitus turiniui (be teksto → anonsas → ataskaita) parašas keičiasi → naujas
-    id → renotify (naujas pranešimas). Tuščia/klaida → '' (id lieka be žymės).
-    Meniu/nav (<35 simb.) į parašą nepatenka; gyvas mačo komentaras lieka JS
-    widget'uose (ne <p>/<li>), tad parašas gyvo mačo metu stabilus (= anonsas)."""
+    id → renotify (naujas pranešimas). Tuščia/klaida → ('', []) (id lieka be žymės).
+    `pastraipos` grąžinamos, kad NEPAPILDOMAI parsisiunčiant galėtume išsaugoti
+    versijų istoriją (tl_hist) – diff'as „kas pasikeitė". Meniu/nav (<35 simb.) į
+    parašą nepatenka; gyvas mačo komentaras lieka JS widget'uose (ne <p>/<li>), tad
+    parašas gyvo mačo metu stabilus (= anonsas)."""
     try:
         r = _req.get(url, headers={"User-Agent": UA, "Accept-Encoding": "gzip, deflate"}, timeout=8)
         soup = BeautifulSoup(r.text, PARSER)
@@ -92,10 +94,16 @@ def fetch_text_sig(url):
             if len(txt) > 100:
                 blocks.append(txt)
         if not blocks:
-            return ""
-        return hashlib.md5("\n".join(blocks).encode()).hexdigest()[:8]
+            return "", []
+        return hashlib.md5("\n".join(blocks).encode()).hexdigest()[:8], blocks
     except Exception:
-        return ""
+        return "", []
+
+def _sentences(blocks):
+    """Pastraipas suskaido į sakinius (diff'ui). Trumpi (<12 simb.) atmetami."""
+    txt = " ".join(" ".join(b.split()) for b in blocks)
+    parts = _re_mod.split(r'(?<=[.!?…])\s+', txt)
+    return [s.strip() for s in parts if len(s.strip()) >= 12]
 
 _HTTP_HEADERS = {
     "User-Agent": UA,
@@ -243,11 +251,12 @@ def main():
     if txt_arts:
         print(f"📝 Teksto parašas ({len(txt_arts)} str.)...")
         with ThreadPoolExecutor(max_workers=6) as ex:
-            sigs = list(ex.map(lambda a: fetch_text_sig(a["url"]), txt_arts))
+            results = list(ex.map(lambda a: fetch_text_sig(a["url"]), txt_arts))
         n = 0
-        for a, sig in zip(txt_arts, sigs):
+        for a, (sig, blocks) in zip(txt_arts, results):
             if sig:
                 a["id"] = art_id(a["url"], a["title"] + "|" + sig)
+                a["_blocks"] = blocks   # laikinas – versijų istorijai (tl_hist), neslim'inamas
                 n += 1
         print(f"  📝 su turiniu: {n}/{len(txt_arts)}")
 
@@ -364,6 +373,39 @@ def main():
         write_cmds.append(["SET", "dates_cache", json.dumps(dates_cache), "EX", 86400*30])
     if first_seen_changed:
         write_cmds.append(["SET", "first_seen", json.dumps(first_seen), "EX", 86400*30])
+
+    # ── Versijų istorija (tl_hist) – „kas pasikeitė" diff'as ────────────────────
+    # Rašom TIK kai renotify_on_text saito straipsnis pasikeitė (id ∈ new_ids).
+    # Tekstą imam iš jau atsisiųsto puslapio (_blocks) → 0 naujų HTTP. tl_hist
+    # skaitom (+1 GET) tik pokyčio runuose – nepasikeitus 0 papildomų komandų.
+    changed_hist = [a for a in txt_arts if a["id"] in new_ids and a.get("_blocks")]
+    if changed_hist:
+        hist = kv_json(kv_pipeline([["GET", "tl_hist"]])[0], {})
+        for a in changed_hist:
+            url = a["url"]
+            new_sents = _sentences(a["_blocks"])
+            entry = hist.get(url) or {"title": a["title"], "full": [], "versions": []}
+            prev_full = entry.get("full", [])
+            prev_set, new_set = set(prev_full), set(new_sents)
+            added   = [s for s in new_sents if s not in prev_set]
+            removed = [s for s in prev_full  if s not in new_set]
+            ver = {"ts": now_iso, "title": a["title"], "added": added, "removed": removed}
+            if entry.get("title") and entry["title"] != a["title"]:
+                ver["title_from"] = entry["title"]
+            # Praleidžiam tuščią versiją (gali pasitaikyti, jei id pakito dėl ne-teksto)
+            if added or removed or "title_from" in ver or not entry.get("versions"):
+                entry["versions"] = (entry.get("versions", []) + [ver])[-15:]
+            entry["title"] = a["title"]
+            entry["full"]  = new_sents
+            hist[url] = entry
+        # Ribojam iki 25 vėliausių URL (pagal paskutinės versijos laiką)
+        if len(hist) > 25:
+            hist = dict(sorted(hist.items(),
+                        key=lambda kv: (kv[1]["versions"][-1]["ts"] if kv[1].get("versions") else ""),
+                        reverse=True)[:25])
+        write_cmds.append(["SET", "tl_hist", json.dumps(hist, ensure_ascii=False), "EX", 86400*7])
+        print(f"  📜 tl_hist: {len(changed_hist)} pokyčių įrašyta")
+
     kv_pipeline(write_cmds)
     print(f"✅ Išsaugota. Naujų: {len(new_ids)}")
 
