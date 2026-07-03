@@ -211,6 +211,11 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 13. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
     `curl -s https://api.github.com/repos/ltutitasas/fules-online/commits/<sha>/status`
     („success" = deploy gyvas; „failure" = build krito ir gyvas liko SENAS deploy!).
+14. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
+    blokuose, žodžiai suskaldyti `<span>` gabalais per vidurį. Todėl teksto ištraukimas
+    renka ir „lapinius" div (be blokinių vaikų, žr. `_is_wrapper_div`), o plain tekstui
+    naudojamas `_el_text` – get_text BE separatoriaus (get_text(" ") darydavo „20 17m.",
+    „pasikeit ė"). `_html_to_sportas` span'us unwrap'ina.
 
 ## Debug įrankiai
 
