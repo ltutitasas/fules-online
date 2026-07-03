@@ -876,7 +876,8 @@ def run_scraper(mode="all"):
             notify_arts = [a for a, r in zip(fresh_cands, sadd_res) if int(r or 0) == 1]
         new_arts = notify_arts[:5]
         if new_arts:
-            lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+            # Be antraštės – title pirmoje eilutėje, kad matytųsi lock screen'e
+            lines = []
             for a in new_arts:
                 sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
                 icon = sport_icon.get(a.get("sport",""), "🏆")

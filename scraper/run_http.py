@@ -429,7 +429,8 @@ def main():
         fresh = [a for a, r in zip(fresh, sadd_res) if int(r or 0) == 1]
     if fresh and seen_count:
         sport_icon = {"futbolas":"⚽","krepšinis":"🏀","ledo ritulys":"🏒","kitas sportas":"🏅"}
-        lines = ["🏆 <b>Naujos sporto naujienos!</b>\n"]
+        # Be antraštės – title pirmoje eilutėje, kad matytųsi lock screen'e
+        lines = []
         for a in fresh[:5]:
             lines.append(f'{sport_icon.get(a.get("sport",""),"🏆")} <a href="{a["url"]}">{a["title"]}</a>')
         if len(fresh) > 5: lines.append(f"\n+{len(fresh)-5} daugiau")
