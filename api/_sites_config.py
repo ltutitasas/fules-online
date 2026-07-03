@@ -28,7 +28,11 @@ SITES = [
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
     {"name":"Utenos Juventus",   "sport":"krepšinis", "sportas_source":"138",  "rss":"https://utenosjuventus.lt/feed/"},
     {"name":"Lietuva Basketball","sport":"krepšinis", "sportas_source":"1034", "rss":"https://lietuva.basketball/feed/"},
-    {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/", "og_image_fallback": True, "image_selector": ".article .image img"},
+    # base_url + text_selector: /api/article-text pagal juos randa turinio konteinerį
+    # (puslapio class "single-post__content" neatitinka generinių [class*="post-content"]
+    # paieškų, o straipsniai iš Word įkelti div.s3/div.s8 blokais – ne <p>)
+    {"name":"BC Rytas",          "sport":"krepšinis", "sportas_source":"411",  "rss":"https://rytasvilnius.lt/feed/", "og_image_fallback": True, "image_selector": ".article .image img",
+     "base_url":"https://rytasvilnius.lt", "text_selector":".single-post__content"},
     {"name":"Lengvoji atletika", "sport":"kitas sportas", "sportas_source":"17",   "rss":"https://lengvoji.lt/feed/", "og_image_fallback": True},
     {"name":"LTU Aquatics",      "sport":"kitas sportas", "sportas_source":"56",   "rss":"https://ltuaquatics.com/feed/", "og_image_fallback": True},
     # ── HTTP saitai (scrape'ina GitHub Actions run_http.py) ─────────

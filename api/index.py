@@ -224,10 +224,15 @@ def _html_to_sportas(html_content):
     # <a> → tik tekstas (pašaliname hyperlinks)
     for tag in soup.find_all("a"):
         tag.replace_with(tag.get_text())
+    # <span> → tik turinys: iš Word įkeltų straipsnių (rytasvilnius.lt) span'ai
+    # skaldo žodžius per vidurį ir neštų svetimas class'es į sportas.lt
+    for tag in soup.find_all("span"): tag.unwrap()
     for tag in soup.find_all("b"): tag.name = "strong"
     for tag in soup.find_all("i"): tag.name = "em"
     parts = []
-    for el in soup.find_all(["p","h2","h3","h4","li"]):
+    for el in soup.find_all(["p","h2","h3","h4","li","div"]):
+        if _is_wrapper_div(el):
+            continue
         inner = el.decode_contents().strip()
         plain = el.get_text(strip=True)
         if len(plain) > 4:
@@ -286,7 +291,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                     # Naudojame _html_to_sportas – išsaugo <strong>, <em> formatavimą
                     html_body = _html_to_sportas(str(main))
                     # Plain tekstas tik AI tagams
-                    paras_plain = [" ".join(el.get_text(" ", strip=True).split())
+                    paras_plain = [_el_text(el)
                                    for el in main.find_all(["p","h2","h3","h4"])
                                    if len(el.get_text(strip=True)) > 10]
                     text = "\n\n".join(paras_plain[:60])
@@ -463,14 +468,34 @@ def _strip_wp_footer(text: str) -> str:
     import re as _re
     return _re.sub(r'\s*The post\s+.+?\s+appeared first on\s+.+?\.?\s*$', '', text, flags=_re.DOTALL | _re.IGNORECASE).strip()
 
+def _el_text(el):
+    """Elemento plain tekstas be span skaldymo artefaktų.
+    get_text(" ") deda tarpą tarp KIEKVIENO inline span – iš Word įkelti straipsniai
+    (rytasvilnius.lt) span'ais skaldo žodžius per vidurį ('20'+'17m.' → '20 17m.').
+    Jungiam be separatoriaus (originalūs tarpai išlieka span'ų tekste), o <br>
+    keičiam tarpu, kad žodžiai nesuliptų."""
+    for br in el.find_all("br"): br.replace_with(" ")
+    return " ".join(el.get_text().split())
+
+_BLOCK_TAGS = ("p","div","h2","h3","h4","li","ul","ol","table")
+
+def _is_wrapper_div(el):
+    """div SU blokiniais vaikais – wrapper'is, kurio tekstas dubliuotų vaikų tekstą.
+    Renkam tik "lapinius" div (be blokinių vaikų) – tikrus teksto blokus, pvz.
+    rytasvilnius.lt įžanga <div class="s3"> ir sąrašai <div class="s8">."""
+    return el.name == "div" and el.find(_BLOCK_TAGS) is not None
+
 def _html_to_text(html):
     if not html: return ""
     soup = _BS4(html, _PARSER)
     for t in soup(["script","style","nav","footer","header","aside"]): t.decompose()
     parts = []
-    for el in soup.find_all(["p","h2","h3","h4","li"]):
-        txt = " ".join(el.get_text(" ", strip=True).split())
-        if len(txt) > 20:
+    for el in soup.find_all(["p","h2","h3","h4","li","div"]):
+        if _is_wrapper_div(el):
+            continue
+        txt = _el_text(el)
+        # riba 10 (buvo 20) – trumpos sąrašo eilutės ("● B tribūna – 1") neiškristų
+        if len(txt) > 10:
             parts.append(txt)
     result = "\n\n".join(parts) if parts else " ".join(soup.get_text(" ", strip=True).split())
     return _strip_wp_footer(result)
@@ -1550,14 +1575,16 @@ def article_text():
             # Jei text_selector rasta – įtraukiame ir div (pvz. hockey.lt naudoja div)
             tags = ["p","h2","h3","h4","li","div"] if txt_sel else ["p","h2","h3","h4","li"]
             for el in main.find_all(tags):
-                txt = " ".join(el.get_text(" ", strip=True).split())
+                if _is_wrapper_div(el):
+                    continue
+                txt = _el_text(el)
                 if len(txt) > 10 and txt not in seen_txts:
                     seen_txts.add(txt)
                     paragraphs.append(txt)
         if not paragraphs:
             # Paskutinis fallback: body su p tagais (be div, vengiam footer)
             for el in (soup.body or soup).find_all(["p","h2","h3","h4","li"]):
-                txt = " ".join(el.get_text(" ", strip=True).split())
+                txt = _el_text(el)
                 if len(txt) > 10 and txt not in seen_txts:
                     seen_txts.add(txt)
                     paragraphs.append(txt)
