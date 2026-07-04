@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api"))
-from _sites_config import HTTP_SITES, slim_art
+from _sites_config import HTTP_SITES, slim_art, norm_url
 
 try:
     import lxml  # noqa: F401
@@ -320,11 +320,12 @@ def main():
     # netyčia perrašytų mūsų įrašus, kitas runas juos atkurtų
     new_arts = [a for a in all_arts if a["id"] in new_ids]
     fetched_ids  = {a["id"] for a in all_arts}
-    # Dedup ir pagal URL – pervadintas straipsnis pakeičia seną įrašą (ne dublikatas)
-    fetched_urls = {a["url"] for a in all_arts if a.get("url")}
+    # Dedup ir pagal URL – pervadintas straipsnis pakeičia seną įrašą (ne dublikatas).
+    # norm_url: /rungtynes-gyvai/ → /rungtynes/ (toplyga.lt keičia URL po mačo)
+    fetched_urls = {norm_url(a["url"]) for a in all_arts if a.get("url")}
     merged = all_arts + [a for a in existing
                          if a["id"] not in fetched_ids
-                         and a.get("url", "") not in fetched_urls]
+                         and norm_url(a.get("url", "")) not in fetched_urls]
     merged.sort(key=_sort_key, reverse=True)
     slim = [slim_art(a) for a in merged[:300]]
     slim_json = json.dumps(slim, ensure_ascii=False)

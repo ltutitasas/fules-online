@@ -11,13 +11,15 @@ from email.utils import parsedate_to_datetime
 _IMPORT_ERR = ""
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _sites_config import SITES as _SITES, slim_art as _slim_art
+    from _sites_config import SITES as _SITES, slim_art as _slim_art, norm_url as _norm_url
 except Exception as _e:
     _IMPORT_ERR = f"{type(_e).__name__}: {_e}"
     _SITES = []
     _SLIM_FIELDS = ("site","sport","title","url","date","image","source","id","text_selector")
     def _slim_art(a):
         return {k: a[k] for k in _SLIM_FIELDS if a.get(k)}
+    def _norm_url(u):
+        return u or ""
 
 # lxml ~5-10x greitesnis; fallback į html.parser jei Vercel lxml neturi
 try:
@@ -812,10 +814,10 @@ def run_scraper(mode="all"):
     # Dedup ir pagal URL – pervadintas straipsnis (tas pats URL, kitas title/id)
     # PAKEIČIA seną įrašą, o ne sukuria dublikatą
     _fetched_ids  = {x["id"] for x in sorted_arts}
-    _fetched_urls = {x["url"] for x in sorted_arts if x.get("url")}
+    _fetched_urls = {_norm_url(x["url"]) for x in sorted_arts if x.get("url")}
     merged = sorted_arts + [a for a in existing
                             if a["id"] not in _fetched_ids
-                            and a.get("url", "") not in _fetched_urls]
+                            and _norm_url(a.get("url", "")) not in _fetched_urls]
     merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
     # Slim saugojimas – be html_content/text (jie dideli; html atskirai raktuose html:{id})
     slim = [_slim_art(a) for a in merged[:300]]
@@ -1089,7 +1091,7 @@ function renderCards() {
     const mCol = art.source === 'RSS' ? '#64748b' : (art.source === 'HTTP' ? '#3b82f6' : sCol);
     const sIcon = _SPORT_ICONS[art.sport] || '🏆';
     const badge = isR ? '<span class="badge">🆕 NAUJA</span>' : '';
-    const img   = art.image ? `<img src="${esc(art.image)}" loading="lazy" onerror="this.style.display='none'">` : '';
+    const img   = art.image ? `<img src="${esc(art.image)}" loading="lazy" onerror="if(this.src.indexOf('-featured.')>-1){this.src=this.src.replace('-featured.','-medium.');}else{this.style.display='none';}">` : '';
     const id    = art.id;
     html += `<div class="card ${isR?'recent':''}" data-sport="${esc(art.sport)}" data-site="${esc(art.site)}">
   ${img}<div class="card-body">${badge}

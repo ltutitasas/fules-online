@@ -100,6 +100,13 @@ SITES = [
 RSS_SITES  = [s for s in SITES if "rss" in s]
 HTTP_SITES = [s for s in SITES if s.get("method") == "http"]
 
+def norm_url(u):
+    """URL normalizavimas dedup'ui. toplyga.lt gyvų rungtynių puslapis
+    /rungtynes-gyvai/... pasibaigus mačui tampa /rungtynes/... (tas pats ID gale) –
+    tai TAS PATS straipsnis: ataskaita turi PAKEISTI seną GYVAI įrašą, kurio
+    nuotrauką toplyga.lt po mačo ištrina (liktų kortelė be foto + dublikatas)."""
+    return (u or "").replace("/rungtynes-gyvai/", "/rungtynes/")
+
 # Laukai, kurie saugomi KV "articles" sąraše (slim – be html_content/text,
 # kad /api/articles atsakymas ir KV srautas būtų maži)
 SLIM_FIELDS = ("site", "sport", "title", "url", "date", "image", "source", "id", "text_selector")
