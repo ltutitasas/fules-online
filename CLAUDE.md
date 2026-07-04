@@ -114,6 +114,9 @@ Lietuva Basketball, BC Rytas
 - `image_selector` – CSS selektorius herojiniam paveikslui. **PIRMENYBĖ prieš og:image!**
   Saitams su image_selector paveikslas VISADA imamas iš selektoriaus (RSS kūno
   pirma <img> nepatikima – ilguose straipsniuose paima vidinę nuotrauką)
+- `wp_featured_api: True` – nuotrauka per WP REST (`/wp-json/wp/v2/posts?slug=X&_embed`)
+  vietoj HTML scrape. Lėtiems WP saitams (fksuduva.lt HTML ~3-4s netelpa į rss 2s
+  timeout, REST ~1.5s); grąžina originalaus dydžio featured nuotrauką
 - `text_selector` – CSS selektorius tekstui (pvz. BC Kibirkštis `.entry-summary`
   kad nedubliuotų title/autoriaus)
 - `also_vercel: True` – HTTP saitą scrape'ina IR Vercel /api/cron-rss (LKL atvejis –
@@ -224,6 +227,11 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 - `/api/scrape-status` – kada kiekvienas saitas paskutinį kartą grąžino straipsnių
   (jei saito nėra arba `ok` senas – saitas tyliai miręs, tikrinti debug-fetch).
 - `/api/version` – greitas patikrinimas ar scraperiai gyvi (`ts` articles_meta viduje).
+- `/api/cron-rss` atsakymo `img_dbg` – og/REST nuotraukų eilės diagnostika:
+  {cand, tried:[saitai], resolved}. Eilė ribota 6/runą (Vercel 10s apsauga), kandidatai
+  tik KV sąraše esantys/nauji straipsniai (feed'ų seni įrašai, kuriuos merged[:300]
+  nukerta, eilės neužima – buvo badavimo bug'as).
+- `/api/article-text` atsakymo `up_status` – upstream HTTP statusas (WAF diagnostikai).
 - `/api/tl-history` – Top Lyga versijų istorija: kiekvieno mačo laiko juosta su diff'u
   (➕ pridėti / ➖ pašalinti sakiniai, 📝 pavadinimo pakeitimai X→Y). Token'u apsaugotas.
   Duomenis kaupia `run_http.py` į `tl_hist` (tik pokyčio metu, 0 naujų HTTP – tekstas
