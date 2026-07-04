@@ -26,7 +26,11 @@ SITES = [
     {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
     {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
-    {"name":"Utenos Juventus",   "sport":"krepšinis", "sportas_source":"138",  "rss":"https://utenosjuventus.lt/feed/"},
+    # Feed'as be content:encoded (tik excerpt su "Skaityti toliau") ir be nuotraukų;
+    # puslapis NETURI og:image, todėl nuotrauka tik per image_selector (+srcset max)
+    {"name":"Utenos Juventus",   "sport":"krepšinis", "sportas_source":"138",  "rss":"https://utenosjuventus.lt/feed/",
+     "og_image_fallback": True, "image_selector": ".entry-content img",
+     "base_url":"https://utenosjuventus.lt"},
     {"name":"Lietuva Basketball","sport":"krepšinis", "sportas_source":"1034", "rss":"https://lietuva.basketball/feed/"},
     # base_url + text_selector: /api/article-text pagal juos randa turinio konteinerį
     # (puslapio class "single-post__content" neatitinka generinių [class*="post-content"]

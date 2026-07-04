@@ -221,6 +221,9 @@ def _html_to_sportas(html_content):
     soup = _BS4(html_content, _PARSER)
     for t in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
         t.decompose()
+    # WordPress excerpt'ų "Skaityti toliau" nuorodos (utenosjuventus.lt) – ne turinys
+    for t in soup.select('[class*="more-link"], [class*="post-excerpt-end"]'):
+        t.decompose()
     # <a> → tik tekstas (pašaliname hyperlinks)
     for tag in soup.find_all("a"):
         tag.replace_with(tag.get_text())
@@ -259,54 +262,62 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     photo_tags   = _nfc(photo_tags)
 
     # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
-    if html_content:
-        html_body = _html_to_sportas(html_content)
-        # AI enrichment plain tekstui (tagams)
-        enriched = _ai_enrich(title, text or _html_to_text(html_content))
-        ai_tags  = enriched.get("tags", "")
-    else:
-        html_body = ""   # būtina inicializuoti – jei fetch žemiau nepavyks/neras
-                         # konteinerio, kitaip UnboundLocalError (buvo Top Lygos bug'as)
-        # Jei tekstas tuščias – bandome gauti iš straipsnio URL
-        if not text and article.get("url"):
-            try:
-                r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
-                from bs4 import BeautifulSoup as _BSt
-                soup = _BSt(r.text, _PARSER)
-                for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
-                    tag.decompose()
-                # Pirma bandome site-specific text_selector (iš article dict arba _SITES config)
-                _site_cfg = next((s for s in _SITES if s["name"] == site), {})
-                txt_sel = article.get("text_selector", "") or _site_cfg.get("text_selector", "")
-                main = (soup.select_one(txt_sel) if txt_sel else None) or \
-                       soup.select_one('[class*="post-content"]') or \
-                       soup.select_one('[class*="article-content"]') or \
-                       soup.select_one('[class*="entry-content"]') or \
-                       soup.select_one('[class*="article-body"]') or \
-                       soup.select_one('[class*="prose"]') or \
-                       soup.select_one('.fck') or \
-                       soup.select_one('article') or \
-                       soup.select_one('main')
-                if main:
-                    # Naudojame _html_to_sportas – išsaugo <strong>, <em> formatavimą
-                    html_body = _html_to_sportas(str(main))
+    html_body = _html_to_sportas(html_content) if html_content else ""
+    def _plain_len(h):
+        return len(_BS4(h, _PARSER).get_text(" ", strip=True)) if h else 0
+
+    # Pilnas tekstas iš straipsnio URL, kai RSS kūno nėra ARBA jis įtartinai trumpas.
+    # Excerpt feed'ai (utenosjuventus.lt – be content:encoded, tik description su
+    # "Skaityti toliau") duoda kelių sakinių ištrauką – publikuoti reikia pilną tekstą.
+    if _plain_len(html_body) < 600 and article.get("url"):
+        try:
+            r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
+            from bs4 import BeautifulSoup as _BSt
+            soup = _BSt(r.text, _PARSER)
+            for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
+                tag.decompose()
+            # Pirma bandome site-specific text_selector (iš article dict arba _SITES config)
+            _site_cfg = next((s for s in _SITES if s["name"] == site), {})
+            txt_sel = article.get("text_selector", "") or _site_cfg.get("text_selector", "")
+            main = (soup.select_one(txt_sel) if txt_sel else None) or \
+                   soup.select_one('[class*="post-content"]') or \
+                   soup.select_one('[class*="article-content"]') or \
+                   soup.select_one('[class*="entry-content"]') or \
+                   soup.select_one('[class*="article-body"]') or \
+                   soup.select_one('[class*="prose"]') or \
+                   soup.select_one('.fck') or \
+                   soup.select_one('article') or \
+                   soup.select_one('main')
+            if main:
+                # Naudojame _html_to_sportas – išsaugo <strong>, <em> formatavimą
+                fb_body = _html_to_sportas(str(main))
+                # Imame tik jei ilgesnis už RSS variantą (puslapis galėjo neatsidaryti pilnai)
+                if _plain_len(fb_body) > _plain_len(html_body):
+                    html_body = fb_body
                     # Plain tekstas tik AI tagams
                     paras_plain = [_el_text(el)
                                    for el in main.find_all(["p","h2","h3","h4"])
                                    if len(el.get_text(strip=True)) > 10]
-                    text = "\n\n".join(paras_plain[:60])
-            except:
-                pass
+                    text = "\n\n".join(paras_plain[:60]) or text
+        except:
+            pass
 
-        if not html_body:
-            enriched  = _ai_enrich(title, text)
-            ai_tags   = enriched.get("tags", "")
-            rich_text = enriched.get("text", text)
-            paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
-            html_body = "".join(f"<p>{p}</p>" for p in paras)
-        else:
-            enriched = _ai_enrich(title, text)
-            ai_tags  = enriched.get("tags", "")
+    enriched = _ai_enrich(title, text or (_html_to_text(html_content) if html_content else ""))
+    ai_tags  = enriched.get("tags", "")
+    if not html_body and text:
+        rich_text = enriched.get("text", text)
+        paras     = [p.strip() for p in rich_text.split("\n\n") if p.strip()]
+        html_body = "".join(f"<p>{p}</p>" for p in paras)
+
+    # Jei pirmoji pastraipa – pats pavadinimas (utenosjuventus.lt turinį pradeda
+    # title eilute), išmetame, kad sportas.lt title nesidubliuotų
+    if html_body:
+        import re as _re_p
+        _first = _re_p.match(r'\s*<p>(.*?)</p>', html_body, _re_p.DOTALL)
+        if _first:
+            _ft = " ".join(_BS4(_first.group(1), _PARSER).get_text(" ", strip=True).split()).casefold()
+            if _ft == " ".join(title.split()).casefold():
+                html_body = html_body[_first.end():]
     # Be teksto nepublikuojame – aiški žinutė vietoj tuščio straipsnio sportas.lt
     if not html_body:
         return False, ("Straipsnis dar be teksto (šaltinis paskelbė tik antraštę) – "
@@ -710,6 +721,18 @@ def run_scraper(mode="all"):
         r'<meta[^>]+content=["\'](https?://[^"\']+)[^>]+itemprop=["\']image["\']',
         r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](https?://[^"\']+)',
     ]
+    def _largest_srcset(el):
+        # srcset didžiausias variantas – WP src dažnai rodo sumažintą (-1024x683),
+        # o srcset gale būna pilno dydžio originalas (utenosjuventus.lt atvejis)
+        best, bw = "", -1
+        for part in (el.get("srcset") or el.get("data-srcset") or "").split(","):
+            bits = part.strip().split()
+            if not bits: continue
+            w = 0
+            if len(bits) > 1 and bits[1][:-1].isdigit():
+                w = int(bits[1][:-1])
+            if w > bw: bw, best = w, bits[0]
+        return best if best.startswith("http") else ""
     def _fetch_og_image(art):
         try:
             r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=2 if mode=="rss" else 4)
@@ -719,7 +742,7 @@ def run_scraper(mode="all"):
             if sel:
                 el = _BS4(html, _PARSER).select_one(sel)
                 if el:
-                    src = el.get("data-src") or el.get("src", "")
+                    src = _largest_srcset(el) or el.get("data-src") or el.get("src", "")
                     if src and src.startswith("http"): return art["id"], src
             # 2. og:image / itemprop / twitter:image meta (kai nėra selektoriaus)
             for pat in _OG_PATS:
