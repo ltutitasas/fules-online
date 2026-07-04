@@ -1634,7 +1634,8 @@ def article_text():
                     seen_txts.add(txt)
                     paragraphs.append(txt)
         text = _strip_wp_footer("\n\n".join(paragraphs))
-        return jsonify({"text": text[:30000]})
+        # up_status – upstream HTTP statusas diagnostikai (pvz. WAF 403 Vercel IP)
+        return jsonify({"text": text[:30000], "up_status": r.status_code})
     except Exception as e:
         return jsonify({"text": "", "error": str(e)})
 
