@@ -648,6 +648,8 @@ def _sort_key(art):
         try: return datetime.fromisoformat(d).replace(tzinfo=None)
         except: return datetime.min
 
+_IMG_DBG = {}   # laikina og/REST nuotraukų diagnostika (rodo /api/cron-rss)
+
 def run_scraper(mode="all"):
     """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
     now_iso0 = datetime.now(timezone.utc).isoformat()
@@ -777,14 +779,19 @@ def run_scraper(mode="all"):
             a["image"] = _existing_img[a["id"]]
     arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
                    (not a.get("image") or (a["site"] in _IMG_SEL_SITES and a["id"] not in _existing_img))]
+    _IMG_DBG.clear()
+    _IMG_DBG["cand"] = len(arts_no_img)
     if arts_no_img:
         # Naujausi pirmiau; max 6 per runą (viena lygiagreti banga) – kad sukaupti
         # neišspręsti paveikslai (lėti/mirę puslapiai) nekirstų Vercel 10s limito
         arts_no_img.sort(key=lambda a: a["id"] not in new_ids)
         arts_no_img = arts_no_img[:6]
+        _IMG_DBG["tried"] = [a["site"] for a in arts_no_img]
+        _IMG_DBG["resolved"] = 0
         with ThreadPoolExecutor(max_workers=6) as ex:
             for aid, img in ex.map(_fetch_og_image, arts_no_img):
                 if img:
+                    _IMG_DBG["resolved"] += 1
                     for a in all_arts:
                         if a["id"] == aid: a["image"] = img; break
 
@@ -1672,7 +1679,8 @@ def cron_rss():
     """Tik RSS saitai – greita (<10s), skirta cron-job.org kas 2 min"""
     try:
         total, new_count = run_scraper(mode="rss")
-        return jsonify({"ok": True, "total": total, "new": new_count, "mode": "rss"})
+        return jsonify({"ok": True, "total": total, "new": new_count, "mode": "rss",
+                        "img_dbg": _IMG_DBG})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
