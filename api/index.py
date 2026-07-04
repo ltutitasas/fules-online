@@ -777,7 +777,12 @@ def run_scraper(mode="all"):
     for a in all_arts:
         if a["id"] in _existing_img and (not a.get("image") or a["site"] in _IMG_SEL_SITES):
             a["image"] = _existing_img[a["id"]]
+    # Tik straipsniai, kurie realiai yra KV sąraše ARBA nauji – feed'uose būna
+    # senų įrašų, kuriuos merged[:300] vis tiek nukerta: jų nuotraukų sprendimas
+    # būtų amžinas darbas veltui (užimdavo visą 6 vietų eilę, badavo kitus saitus)
+    _existing_ids = {a["id"] for a in existing}
     arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
+                   (a["id"] in _existing_ids or a["id"] in new_ids) and
                    (not a.get("image") or (a["site"] in _IMG_SEL_SITES and a["id"] not in _existing_img))]
     _IMG_DBG.clear()
     _IMG_DBG["cand"] = len(arts_no_img)
