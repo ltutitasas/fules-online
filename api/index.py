@@ -735,7 +735,22 @@ def run_scraper(mode="all"):
                 w = int(bits[1][:-1])
             if w > bw: bw, best = w, bits[0]
         return best if best.startswith("http") else ""
+    _WP_REST_IMG_SITES = {s["name"] for s in _SITES if s.get("wp_featured_api")}
     def _fetch_og_image(art):
+        # WP REST – lėtiems WP saitams (fksuduva.lt HTML ~3-4s, netelpa į rss 2s
+        # timeout; REST JSON ~1.5s): featured nuotrauka vienu request'u
+        if art["site"] in _WP_REST_IMG_SITES:
+            try:
+                from urllib.parse import urlparse, quote
+                p = urlparse(art["url"])
+                slug = quote(p.path.rstrip("/").split("/")[-1])
+                api = f"{p.scheme}://{p.netloc}/wp-json/wp/v2/posts?slug={slug}&_embed=wp:featuredmedia&_fields=_embedded,_links"
+                rj = _req.get(api, headers={"User-Agent": _UA}, timeout=4).json()
+                src = rj[0]["_embedded"]["wp:featuredmedia"][0].get("source_url", "")
+                if src.startswith("http"): return art["id"], src
+            except: pass
+            # HTML fallback beprasmis – puslapis lėtesnis už rss timeout
+            return art["id"], None
         try:
             r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=2 if mode=="rss" else 4)
             html = r.text
@@ -763,6 +778,10 @@ def run_scraper(mode="all"):
     arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
                    (not a.get("image") or (a["site"] in _IMG_SEL_SITES and a["id"] not in _existing_img))]
     if arts_no_img:
+        # Naujausi pirmiau; max 6 per runą (viena lygiagreti banga) – kad sukaupti
+        # neišspręsti paveikslai (lėti/mirę puslapiai) nekirstų Vercel 10s limito
+        arts_no_img.sort(key=lambda a: a["id"] not in new_ids)
+        arts_no_img = arts_no_img[:6]
         with ThreadPoolExecutor(max_workers=6) as ex:
             for aid, img in ex.map(_fetch_og_image, arts_no_img):
                 if img:
