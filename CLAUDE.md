@@ -9,7 +9,9 @@ Lietuvos sporto naujienų agregatorius. Scrape'ina LT sporto klubų/federacijų
 svetaines, deduplikuoja, rodo dashboard'ą, siunčia Telegram + naršyklės
 notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt adminą.
 
-- **Gyvas URL**: https://fules-online.vercel.app
+- **Gyvas URL**: https://fules-online2.vercel.app (senas fules-online Vercel
+  account'as užblokuotas – jo deploy status GitHube visada „failure", žiūrėti
+  „Vercel – fules-online2" statusą)
 - **GitHub repo**: https://github.com/ltutitasas/fules-online (deploy automatinis per Vercel push'inus į main)
 - **Hostingas**: Vercel Hobby planas (⚠️ 10s serverless timeout limitas!)
 - **Saugykla**: Vercel KV (Upstash Redis, REST API)
@@ -51,7 +53,7 @@ Dėl Vercel 10s limito scrape'inimas padalintas:
 
 ```
 cron-job.org Job 1 (kas ~1-2 min)
-  → POST https://fules-online.vercel.app/api/cron-rss
+  → POST https://fules-online2.vercel.app/api/cron-rss
   → run_scraper(mode="rss") – TIK RSS saitai, telpa į <10s
 
 cron-job.org Job 2 (kas 2 min)
@@ -213,7 +215,10 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     Patikrinti: `/api/health` rodo aktyvų parserį.
 13. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
     `curl -s https://api.github.com/repos/ltutitasas/fules-online/commits/<sha>/status`
-    („success" = deploy gyvas; „failure" = build krito ir gyvas liko SENAS deploy!).
+    ⚠️ Bendra `state` visada „failure", nes prie repo dar prikabintas užblokuotas
+    senas `fules-online` account'as. Žiūrėti `statuses[]` įrašą su kontekstu
+    **„Vercel – fules-online2"** – jo „success" = deploy gyvas; „failure" =
+    build krito ir gyvas liko SENAS deploy!
 14. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
     blokuose, žodžiai suskaldyti `<span>` gabalais per vidurį. Todėl teksto ištraukimas
     renka ir „lapinius" div (be blokinių vaikų, žr. `_is_wrapper_div`), o plain tekstui
