@@ -226,6 +226,10 @@ def _html_to_sportas(html_content):
     # WordPress excerpt'ų "Skaityti toliau" nuorodos (utenosjuventus.lt) – ne turinys
     for t in soup.select('[class*="more-link"], [class*="post-excerpt-end"]'):
         t.decompose()
+    # Temos meta blokai teksto konteineryje: antraštė + data (bcjonavahipocredit.lt
+    # .post-txt viduje turi .section-title h3 ir ul.post-meta) – ne turinys
+    for t in soup.select('.section-title, .post-meta'):
+        t.decompose()
     # <a> → tik tekstas (pašaliname hyperlinks)
     for tag in soup.find_all("a"):
         tag.replace_with(tag.get_text())
@@ -1611,6 +1615,9 @@ def article_text():
         soup = _BS4(r.text, _PARSER)
         for tag in soup(["script","style","nav","footer","header","aside",
                          "iframe","noscript","form","button"]):
+            tag.decompose()
+        # Temos meta blokai teksto konteineryje (antraštė/data – bcjonavahipocredit.lt)
+        for tag in soup.select('.section-title, .post-meta'):
             tag.decompose()
         # Ieškome site-specific text_selector iš _SITES konfigūracijos
         site_cfg = next((s for s in _SITES

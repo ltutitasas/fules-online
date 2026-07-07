@@ -84,7 +84,11 @@ SITES = [
     {"name":"BC Jonava", "sport":"krepšinis", "sportas_source":"1043", "method":"http",
      "url":"https://bcjonavahipocredit.lt/naujienos/",
      "selectors":{"articles":"div.news-list-post","title":"h4 a","link":"h4 a","image":"img"},
-     "base_url":"https://bcjonavahipocredit.lt"},
+     "base_url":"https://bcjonavahipocredit.lt",
+     # Straipsnio tekstas .post-txt bloke; bendri selektoriai (article/main/
+     # post-content...) šioje temoje neegzistuoja – be šito publikavimas
+     # grąžindavo „Straipsnis dar be teksto"
+     "text_selector":".post-txt"},
     # ── Kiti ────────────────────────────────────────────────────────
     {"name":"Hockey Lietuva", "sport":"ledo ritulys", "sportas_source":"27", "method":"http",
      "url":"https://www.hockey.lt/index.php/naujienos/17",
