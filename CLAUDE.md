@@ -83,11 +83,26 @@ throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – 
 | `dates_cache` | JSON dict | 30 d. | {id: iso_data} – straipsniams be datos |
 | `first_seen` | JSON dict | 30 d. | {id: iso} – kada MES pirmą kartą pamatėme |
 | `recent_ids` | JSON **dict** | 3 h | {id: iso} – KAUPIAMAS (ne perrašomas!), įrašai senesni nei 3h išmetami kiekvieno runo metu |
-| `scrape_status` | JSON dict | 7 d. | {site: {ok, n}} – kada saitas paskutinį kartą grąžino straipsnių (`/api/scrape-status`) |
+| `scrape_status` | JSON dict | 7 d. | {site: {ok, n}} – kada saitas paskutinį kartą grąžino straipsnių (`/api/scrape-status`). „ok" atnaujinamas tik kas ~10 min (KV komandų taupymas) |
+| `html_ids` | JSON dict | 2 d. | {id: iso kada įrašytas html:{id}} – indeksas vietoj EXISTS lavinos (buvo ~200 EXISTS/runą = 93% kvotos!). Įrašas galioja 46h, tada html perrašomas |
 | `tl_hist` | JSON dict | 7 d. | {url: {title, full:[sakiniai], versions:[{ts,title,added,removed,title_from}]}} – Top Lyga (renotify_on_text saitų) versijų istorija „kas pasikeitė". Rašo TIK `run_http.py` ir TIK kai straipsnis pakito (id ∈ new_ids); rodo `/api/tl-history`. Max 25 URL / 15 versijų |
 
 Visi KV skaitymai/rašymai scraperiuose eina per **pipeline** (`_kv_pipeline` /
 `kv_pipeline`) – vienas HTTP request'as vietoj 5-6 round-trip'ų.
+
+### ⚠️ KV komandų taupymo režimas (2026-07-18, Upstash Free 500K kom./mėn!)
+
+Upstash Free planas – **500 000 komandų/mėn**; pipeline NETAUPO (kiekviena komanda
+skaičiuojama atskirai), bet **MGET su N raktų = 1 komanda**. Kvota buvo išnaudota
+3 kartus (06-19, 07-09, 07-18), todėl abu scraperiai optimizuoti – tipinis runas
+be naujienų = **4 komandos** (MGET + SCARD + 2 SMISMEMBER, 0 rašymų):
+- Visi GET sujungti į vieną MGET (skaitymas PO fetch'o, vienu pipeline su SMISMEMBER).
+- `recent_ids`/`scrape_status` rašomi TIK pasikeitus (scrape_status „ok" – 10 min tikslumu).
+- `EXPIRE` TTL pratęsimai – tik ~kas 30-tą runą (`random() < 0.033`), ne kas runą.
+- `EXISTS html:{id}` lavina (~200 kom./runą!) pakeista `html_ids` indeksu (žr. lentelę).
+- `/api/version` ir `/api/articles` – 1 MGET vietoj 2 GET.
+NEGRĄŽINTI besąlyginių SET/EXPIRE kas runą ir nepridėti naujų per-straipsnį KV
+komandų – kvota vėl baigsis per 1-2 savaites.
 
 ⚠️ `seen_ids` TTL buvo 7 d. – seni straipsniai "atgydavo" ir lipdavo į viršų.
 Dabar 30 d. + merged sort pagal datą sprendžia šią problemą.

@@ -222,12 +222,9 @@ def main():
     print(f"{'═'*50}\n")
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    pre = kv_pipeline([["GET", "dates_cache"], ["GET", "first_seen"], ["GET", "scrape_status"]])
-    dates_cache   = kv_json(pre[0], {})
-    first_seen    = kv_json(pre[1], {})
-    scrape_status = kv_json(pre[2], {})
 
     all_arts = []
+    _status_updates = {}   # merge'inam į scrape_status po KV skaitymo (žr. žemiau)
     print(f"🌐 HTTP ({len(HTTP_SITES)} saitų)...")
     with ThreadPoolExecutor(max_workers=len(HTTP_SITES)) as ex:
         futures = {ex.submit(fetch_http, s): s for s in HTTP_SITES}
@@ -237,7 +234,7 @@ def main():
                 arts = fut.result()
                 all_arts.extend(arts)
                 if arts:
-                    scrape_status[s["name"]] = {"ok": now_iso, "n": len(arts)}
+                    _status_updates[s["name"]] = {"ok": now_iso, "n": len(arts)}
                 print(f"  ✅ {s['name']}: {len(arts)}")
             except Exception as e:
                 print(f"  ❌ {s['name']}: {e}")
@@ -260,27 +257,48 @@ def main():
                 n += 1
         print(f"  📝 su turiniu: {n}/{len(txt_arts)}")
 
-    # Naujumo patikra: SMISMEMBER tik kandidatams + esami articles/recent vienu pipeline
+    # VISI KV skaitymai vienu pipeline: MGET Upstash apskaitoje = 1 KOMANDA
+    # nepriklausomai nuo raktų kiekio (6 GET → 1 MGET; taupom 500K/mėn kvotą).
+    # SMISMEMBER tik kandidatams (vietoj viso seen_ids/seen_urls seto siuntimosi)
     ids  = [a["id"] for a in all_arts]
     urls = [a.get("url", "") for a in all_arts]
-    chk_cmds = [["SCARD", "seen_ids"], ["GET", "articles"], ["GET", "recent_ids"]]
+    chk_cmds = [["MGET", "dates_cache", "first_seen", "scrape_status",
+                 "articles", "recent_ids", "articles_hash"],
+                ["SCARD", "seen_ids"]]
     if ids:
         chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
         chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
-    chk_cmds.append(["GET", "articles_hash"])   # bandwidth dedup – paskutinis
     chk = kv_pipeline(chk_cmds)
-    prev_articles_hash = chk[-1]
-    seen_count = int(chk[0] or 0)
-    existing   = kv_json(chk[1], [])
-    raw_recent = kv_json(chk[2], {})
+    mg = chk[0] or [None] * 6
+    dates_cache   = kv_json(mg[0], {})
+    first_seen    = kv_json(mg[1], {})
+    scrape_status = kv_json(mg[2], {})
+    existing      = kv_json(mg[3], [])
+    raw_recent    = kv_json(mg[4], {})
+    prev_articles_hash = mg[5]
+    seen_count = int(chk[1] or 0)
     # SAUGIKLIS nuo nenuoseklaus KV skaitymo (tuščia/bloga replika): jei seen_ids
     # "tuščias", o articles pilnas – skaitymas pataikė į blogą backend'ą; praleidžiam
     # runą be rašymo/Telegram (kitaip viskas atrodytų nauja → spam).
     if seen_count == 0 and len(existing) > 10:
         print("⚠️  Nenuoseklus KV skaitymas (seen_ids=0, bet articles pilnas) – praleidžiam runą")
         return
-    id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
-    url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
+    id_seen  = (chk[2] if len(chk) > 2 else None) or [0] * len(ids)
+    url_seen = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
+    # scrape_status atnaujinam TAUPIAI: "ok" keičiam tik jei senesnis nei 10 min
+    # arba pasikeitė n – kitaip raktas būtų rašomas kas runą vien dėl timestamp'o
+    _ss_changed = False
+    _ss_fresh_cut = datetime.now(timezone.utc) - timedelta(minutes=10)
+    for _sn, _st in _status_updates.items():
+        _prev = scrape_status.get(_sn) or {}
+        try:
+            _prev_fresh = (datetime.fromisoformat(str(_prev.get("ok", "")).replace("Z", "+00:00"))
+                           >= _ss_fresh_cut) and _prev.get("n") == _st["n"]
+        except Exception:
+            _prev_fresh = False
+        if not _prev_fresh:
+            scrape_status[_sn] = _st
+            _ss_changed = True
     # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
     _RENAME_OK = {s["name"] for s in HTTP_SITES if s.get("renotify_on_rename")}
     new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
@@ -344,22 +362,27 @@ def main():
         rec_map.setdefault(a["id"], now_iso)
 
     print("\n💾 Merge į Vercel KV...")
-    write_cmds = [
-        ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
-        ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
-    ]
+    # Rašom TIK tai, kas realiai pasikeitė – kiekviena komanda kainuoja Upstash
+    # 500K/mėn kvotą. Tipinis runas be naujienų: 0 rašymo komandų.
+    write_cmds = []
+    if rec_map != raw_recent:
+        write_cmds.append(["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3])
+    if _ss_changed:
+        write_cmds.append(["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7])
     # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
     # seen_ids egzistuoja – skaitymas pataikė į blogą backend'ą, neperrašome archyvo.
     _read_consistent = not (not existing and seen_count > 0)
+    # TTL priežiūra ~kas 30-tą runą (TTL 2 d., pratęsinėti kas 2 min beprasmiška)
+    import random as _rnd
+    _maint = _rnd.random() < 0.033
     if _read_consistent and new_articles_hash != prev_articles_hash:
-        # Turinys pasikeitė → perrašom. Jei nepasikeitė – tik TTL pratęsiam (žemiau).
+        # Turinys pasikeitė → perrašom. Jei nepasikeitė – tik retkarčiais TTL pratęsiam.
         write_cmds.append(["SET", "articles", slim_json, "EX", 86400*2])
         write_cmds.append(["SET", "articles_hash", new_articles_hash, "EX", 86400*2])
         write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
                                              "first": slim[0]["id"] if slim else "",
                                              "ts": now_iso}), "EX", 86400*2])
-    elif _read_consistent:
-        # Niekas nepasikeitė – nerašom ~100KB bloko, tik pratęsiam TTL (bandwidth).
+    elif _read_consistent and _maint:
         write_cmds.append(["EXPIRE", "articles", 86400*2])
         write_cmds.append(["EXPIRE", "articles_hash", 86400*2])
         write_cmds.append(["EXPIRE", "articles_meta", 86400*2])

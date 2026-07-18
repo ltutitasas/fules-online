@@ -657,11 +657,6 @@ _IMG_DBG = {}   # laikina og/REST nuotraukų diagnostika (rodo /api/cron-rss)
 def run_scraper(mode="all"):
     """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
     now_iso0 = datetime.now(timezone.utc).isoformat()
-    # Visi pradiniai KV skaitymai vienu pipeline request'u (vietoj 4-5 round-trip'ų)
-    pre = _kv_pipeline([["GET", "dates_cache"], ["GET", "first_seen"], ["GET", "scrape_status"]])
-    dates_cache   = _kv_json(pre[0], {})
-    first_seen    = _kv_json(pre[1], {})   # {id: iso} – kada MES pirmą kartą pamatėme
-    scrape_status = _kv_json(pre[2], {})   # {site: {"ok": iso, "n": count}} – saitų sveikata
     rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
     # rss režime papildomai imami HTTP saitai su also_vercel (pvz. LKL, kurį
     # lkl.lt blokuoja GitHub Actions IP) – fetch vyksta lygiagrečiai, telpa į 10s
@@ -670,6 +665,7 @@ def run_scraper(mode="all"):
     else:
         http_sites = [s for s in _SITES if s.get("method") == "http"]
     all_arts   = []
+    _status_updates = {}   # {site: {"ok","n"}} – merge'inam į scrape_status po KV skaitymo
     with ThreadPoolExecutor(max_workers=16) as ex:
         futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
         futs.update({ex.submit(_fetch_http, s): s for s in http_sites})
@@ -679,22 +675,29 @@ def run_scraper(mode="all"):
                 arts = fut.result()
                 all_arts.extend(arts)
                 if arts:
-                    scrape_status[site["name"]] = {"ok": now_iso0, "n": len(arts)}
+                    _status_updates[site["name"]] = {"ok": now_iso0, "n": len(arts)}
             except: pass
-    # Naujumo patikra: SMISMEMBER tik kandidatams (vietoj viso seen_ids/seen_urls
-    # seto siuntimosi – setai per 30 d. užauga iki tūkstančių narių)
+    # VISI KV skaitymai vienu pipeline: MGET Upstash apskaitoje = 1 KOMANDA
+    # nepriklausomai nuo raktų kiekio (7 GET → 1 MGET; taupom 500K/mėn kvotą).
+    # SMISMEMBER tik kandidatams (vietoj viso seen_ids/seen_urls seto siuntimosi)
     ids  = [a["id"] for a in all_arts]
     urls = [a.get("url", "") for a in all_arts]
-    chk_cmds = [["SCARD", "seen_ids"], ["GET", "articles"], ["GET", "recent_ids"]]
+    chk_cmds = [["MGET", "dates_cache", "first_seen", "scrape_status",
+                 "articles", "recent_ids", "articles_hash", "html_ids"],
+                ["SCARD", "seen_ids"]]
     if ids:
         chk_cmds.append(["SMISMEMBER", "seen_ids"] + ids)
         chk_cmds.append(["SMISMEMBER", "seen_urls"] + urls)
-    chk_cmds.append(["GET", "articles_hash"])   # bandwidth dedup – paskutinis
     chk = _kv_pipeline(chk_cmds)
-    prev_articles_hash = chk[-1]
-    seen_count = int(chk[0] or 0)
-    existing   = _kv_json(chk[1], [])
-    raw_recent = _kv_json(chk[2], {})
+    mg = chk[0] or [None] * 7
+    dates_cache   = _kv_json(mg[0], {})
+    first_seen    = _kv_json(mg[1], {})   # {id: iso} – kada MES pirmą kartą pamatėme
+    scrape_status = _kv_json(mg[2], {})   # {site: {"ok": iso, "n": count}} – saitų sveikata
+    existing      = _kv_json(mg[3], [])
+    raw_recent    = _kv_json(mg[4], {})
+    prev_articles_hash = mg[5]
+    html_ids      = _kv_json(mg[6], {})   # {id: iso kada įrašytas html:{id}} – vietoj EXISTS lavinos
+    seen_count = int(chk[1] or 0)
     # SAUGIKLIS nuo nenuoseklaus KV skaitymo (tuščia/bloga replika): seen_ids ir
     # articles turi būti suderinti. Jei seen_ids "tuščias", o articles pilnas –
     # skaitymas pataikė į blogą backend'ą; praleidžiam runą be rašymo/Telegram,
@@ -710,8 +713,24 @@ def run_scraper(mode="all"):
         h = _up(u).netloc.lower()
         return (h[4:] if h.startswith("www.") else h) in _hosts
     existing = [a for a in existing if _url_ok(a.get("url", ""))]
-    id_seen  = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
-    url_seen = (chk[4] if len(chk) > 4 else None) or [0] * len(ids)
+    id_seen  = (chk[2] if len(chk) > 2 else None) or [0] * len(ids)
+    url_seen = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
+    # scrape_status atnaujinam TAUPIAI: "ok" laikas keičiamas tik jei senesnis nei
+    # 10 min arba pasikeitė straipsnių kiekis – kitaip scrape_status būtų rašomas
+    # kas runą vien dėl timestamp'o (KV komandų kvota). Sveikatos stebėjimui
+    # (/api/scrape-status žiūri valandų mastu) 10 min tikslumo užtenka.
+    _ss_changed = False
+    _ss_fresh_cut = datetime.now(timezone.utc) - timedelta(minutes=10)
+    for _sn, _st in _status_updates.items():
+        _prev = scrape_status.get(_sn) or {}
+        try:
+            _prev_fresh = (datetime.fromisoformat(str(_prev.get("ok", "")).replace("Z", "+00:00"))
+                           >= _ss_fresh_cut) and _prev.get("n") == _st["n"]
+        except Exception:
+            _prev_fresh = False
+        if not _prev_fresh:
+            scrape_status[_sn] = _st
+            _ss_changed = True
     # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų).
     # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
     _RENAME_OK = {s["name"] for s in _SITES if s.get("renotify_on_rename")}
@@ -871,28 +890,34 @@ def run_scraper(mode="all"):
     for rid in recent_ids:
         rec_map.setdefault(rid, now_iso)
 
-    write_cmds = [
-        ["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3],
-        ["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7],
-    ]
+    # Rašom TIK tai, kas realiai pasikeitė – kiekviena komanda kainuoja Upstash
+    # 500K/mėn kvotą. Tipinis runas be naujienų: 0 rašymo komandų.
+    write_cmds = []
+    if rec_map != raw_recent:
+        write_cmds.append(["SET", "recent_ids", json.dumps(rec_map), "EX", 3600*3])
+    if _ss_changed:
+        write_cmds.append(["SET", "scrape_status", json.dumps(scrape_status, ensure_ascii=False), "EX", 86400*7])
     # articles perrašome tik kai skaitymas nuoseklus. Jei existing tuščias, bet
     # seen_ids egzistuoja (seen_count>0) – skaitymas pataikė į blogą backend'ą,
     # neperrašome archyvo tuščiu/sutrumpintu sąrašu.
     _read_consistent = not (not existing and seen_count > 0)
+    # TTL priežiūra ~kas 30-tą runą (ne kas runą – TTL 2 d., pratęsinėti kas 1-2 min
+    # beprasmiška; 720+ runų/d. → ~24-48 priežiūros runai/d., saugu su kaupu)
+    import random as _rnd
+    _maint = _rnd.random() < 0.033
     if _read_consistent and new_articles_hash != prev_articles_hash:
         # Turinys pasikeitė → perrašom (~100KB). BANDWIDTH dedup: jei nepasikeitė,
-        # nerašom viso bloko, tik atnaujinam TTL pigia EXPIRE komanda (žemiau).
+        # nerašom viso bloko, tik retkarčiais pratęsiam TTL pigia EXPIRE komanda.
         write_cmds.append(["SET", "articles", slim_json, "EX", 86400*2])
         write_cmds.append(["SET", "articles_hash", new_articles_hash, "EX", 86400*2])
         write_cmds.append(["SET", "articles_meta", json.dumps({"count": len(slim),
                                              "first": slim[0]["id"] if slim else "",
                                              "ts": now_iso}), "EX", 86400*2])
-    elif _read_consistent:
-        # Niekas nepasikeitė – tik pratęsiam TTL (kad articles neišsitrintų po 2 d.),
-        # nerašydami viso ~100KB bloko (taupom 10GB/mėn bandwidth).
+    elif _read_consistent and _maint:
         write_cmds.append(["EXPIRE", "articles", 86400*2])
         write_cmds.append(["EXPIRE", "articles_hash", 86400*2])
         write_cmds.append(["EXPIRE", "articles_meta", 86400*2])
+        write_cmds.append(["EXPIRE", "html_ids", 86400*2])
     if new_ids:
         write_cmds.append(["SADD", "seen_ids"] + list(new_ids))
         write_cmds.append(["EXPIRE", "seen_ids", 86400*30])
@@ -907,15 +932,26 @@ def run_scraper(mode="all"):
     _kv_pipeline(write_cmds)
 
     # RSS HTML – atskiruose raktuose html:{id}, kad articles sąrašas liktų mažas.
-    # EXISTS patikra + SET tik trūkstamiems; ribojam iki 60/run (likę – kitam runui).
+    # Kas įrašyta, žinom iš html_ids rakto ({id: iso}) – jokios EXISTS lavinos
+    # (anksčiau ~200 EXISTS komandų KAS RUNĄ = 93% visos KV kvotos!).
+    # Įrašas galioja 46h (html:{id} TTL 48h – atnaujinam prieš pasibaigiant);
+    # ribojam iki 60/run (likę – kitam runui).
     html_arts = [a for a in all_arts if a.get("html_content")]
     if html_arts:
-        ex_res = _kv_pipeline([["EXISTS", f"html:{a['id']}"] for a in html_arts])
-        to_store = [a for a, e in zip(html_arts, ex_res) if not int(e or 0)][:60]
+        _html_cut = (datetime.now(timezone.utc) - timedelta(hours=46)).isoformat()
+        html_ids  = {i: t for i, t in html_ids.items() if str(t) >= _html_cut}
+        to_store  = [a for a in html_arts if a["id"] not in html_ids][:60]
+        for a in to_store:
+            html_ids[a["id"]] = now_iso
+        if len(html_ids) > 600:   # apsauga nuo augimo (feed'uose ~200 id)
+            html_ids = dict(sorted(html_ids.items(), key=lambda kv: str(kv[1]))[-600:])
         for i in range(0, len(to_store), 20):   # dalimis – Upstash request dydžio limitas
-            _kv_pipeline([["SET", f"html:{a['id']}",
-                           json.dumps(a["html_content"], ensure_ascii=False), "EX", 86400*2]
-                          for a in to_store[i:i+20]])
+            _batch = [["SET", f"html:{a['id']}",
+                       json.dumps(a["html_content"], ensure_ascii=False), "EX", 86400*2]
+                      for a in to_store[i:i+20]]
+            if i + 20 >= len(to_store):   # paskutinė dalis – kartu ir html_ids indeksas
+                _batch.append(["SET", "html_ids", json.dumps(html_ids), "EX", 86400*2])
+            _kv_pipeline(_batch)
 
     # Telegram – tik nauji IR sistemos pirmo pamatymo laikas ne senesnis nei 24h
     if new_ids and seen_count:
@@ -1551,7 +1587,8 @@ def _cached_kv(key, ttl, fetch):
 @app.route("/api/articles", methods=["GET"])
 def articles():
     def _fetch():
-        res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
+        # MGET = 1 Upstash komanda (vietoj 2 GET) – KV kvotos taupymas
+        res    = _kv_pipeline([["MGET", "articles", "recent_ids"]])[0] or [None, None]
         data   = _kv_json(res[0], [])
         recent = _recent_list(_kv_json(res[1], {}))
         slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
@@ -1566,7 +1603,8 @@ def version():
     """Mažytis atsakymas polling'ui – frontend pilną /api/articles siunčiasi
     tik kai čia kažkas pasikeičia (vietoj pilno sąrašo kas 10s)."""
     def _fetch():
-        res    = _kv_pipeline([["GET", "articles_meta"], ["GET", "recent_ids"]])
+        # MGET = 1 Upstash komanda (vietoj 2 GET) – pigiausias įmanomas poll'as
+        res    = _kv_pipeline([["MGET", "articles_meta", "recent_ids"]])[0] or [None, None]
         meta   = _kv_json(res[0], {})
         recent = _recent_list(_kv_json(res[1], {}))
         return {"recent_ids": recent, "count": meta.get("count", 0),
@@ -1668,7 +1706,7 @@ def refresh():
         # turinio parašo, tad jų ID skiriasi nuo run_http.py → senos naujienos
         # iškildavo kaip NAUJA su einamuoju laiku. Top Lyga lieka GitHub Actions žinioje.
         total, new_count = run_scraper(mode="rss")
-        res    = _kv_pipeline([["GET", "articles"], ["GET", "recent_ids"]])
+        res    = _kv_pipeline([["MGET", "articles", "recent_ids"]])[0] or [None, None]
         data   = _kv_json(res[0], [])
         recent = _recent_list(_kv_json(res[1], {}))
         slim = [{k: v for k, v in a.items() if k not in ("html_content", "text")} for a in data]
