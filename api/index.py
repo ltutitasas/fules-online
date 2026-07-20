@@ -169,6 +169,10 @@ def _session():
     from bs4 import BeautifulSoup
     sess = _req.Session()
     sess.headers.update({"User-Agent": _UA})
+    # Nuo 2026-07 sportas.lt adminas pasiekiamas tik su ?ileisk=1 (be jo /Admin/login
+    # 404). Parametrą pridedam prie VISŲ šios sesijos užklausų – jei kuriam nors
+    # endpointui jis nereikalingas, serveris tiesiog ignoruoja
+    sess.params = {"ileisk": "1"}
     if not SPORTAS_USER:
         return sess
 
