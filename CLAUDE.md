@@ -152,6 +152,9 @@ Lietuva Basketball, BC Rytas
 
 ## sportas.lt integracija
 
+⚠️ Nuo 2026-07 adminas pasiekiamas tik su `?ileisk=1` (be jo `/Admin/login` – 404).
+`_session()` prideda `sess.params = {"ileisk": "1"}` prie visų admin užklausų.
+
 ### Kategorijos (`_SPORT_CATS` + `_SITE_CATS_OVERRIDE`)
 ```python
 _SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7],
