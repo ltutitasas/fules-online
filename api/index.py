@@ -186,16 +186,18 @@ def _session():
         except:
             pass
 
-    # Naujas login
+    # Naujas login. Nuo 2026-07 /Admin/login be ?ileisk=1 grąžina 404 –
+    # formos hidden referer ir Referer header'is turi rodyti į naują URL
     form_data = {
         "Username": SPORTAS_USER,
         "Password": SPORTAS_PASS,
         "return": "",
         "closeWindow": "",
-        "referer": "/Admin/login",
+        "referer": "/Admin/login?ileisk=1",
     }
     sess.post("https://www.sportas.lt/Admin/check/",
-              data=form_data, allow_redirects=True, timeout=15)
+              data=form_data, allow_redirects=True, timeout=15,
+              headers={"Referer": "https://www.sportas.lt/Admin/login?ileisk=1"})
     _kv_set("sportas_cookies", dict(sess.cookies), ex=86400)
     return sess
 
