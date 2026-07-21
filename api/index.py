@@ -553,14 +553,34 @@ def _fetch_rss(site):
                 raw_html = e.content[0].get("value","")
             if not raw_html and e.get("summary"):
                 raw_html = e.get("summary","")
-            # Fallback: pirma <img> iš HTML (data-src pirmiau dėl lazy load)
+            # Fallback: pirma TINKAMA <img> iš HTML (data-src pirmiau dėl lazy load).
+            # Rėmėjų banerius praleidžiam: ekstremalios proporcijos (plotis/aukštis
+            # >= 3) arba mažas aukštis. Matmenys – iš width/height atributų arba
+            # failo vardo (pvz. Lazybos_CA_1000x200_black.png; bcsiauliai.lt baneris
+            # eidavo vietoj tikros 2160x1350 nuotraukos)
             if not image and raw_html:
+                import re as _re_i
                 _si = _BS4(raw_html, _PARSER)
-                _it = _si.find("img")
-                if _it:
+                _first_any = None
+                for _it in _si.find_all("img"):
                     src = _it.get("data-src","") or _it.get("src","")
-                    if src and src.startswith("http"):
-                        image = src
+                    if not (src and src.startswith("http")):
+                        continue
+                    if _first_any is None:
+                        _first_any = src   # atsarginis, jei visi atrodys kaip baneriai
+                    try:
+                        w = float(_it.get("width") or 0); h = float(_it.get("height") or 0)
+                    except (TypeError, ValueError):
+                        w = h = 0
+                    if not (w and h):
+                        _m = _re_i.search(r'(\d{2,4})x(\d{2,4})', src.rsplit("/", 1)[-1])
+                        if _m: w, h = float(_m.group(1)), float(_m.group(2))
+                    if w and h and (w / h >= 3 or h < 120):
+                        continue   # baneris/juosta – ne herojinė nuotrauka
+                    image = src
+                    break
+                if not image:
+                    image = _first_any
             text = _html_to_text(raw_html) if raw_html else ""
             if not text and e.get("summary"):
                 raw_html = raw_html or e.get("summary","")
