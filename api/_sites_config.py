@@ -77,6 +77,9 @@ SITES = [
     {"name":"LKL", "sport":"krepšinis", "sportas_source":"30", "method":"http", "also_vercel": True,
      "url":"https://lkl.lt/straipsniai",
      "link_pattern_re": r"/straipsniai/\d+/",
+     # Sąraše dalis thumb'ų maži (160x208) – keičiam į 1214x726 (og:image dydis,
+     # serveris generuoja visoms nuotraukoms; patikrinta HEAD=200)
+     "img_replace_re": [r"/media/articles/\d+x\d+/", "/media/articles/1214x726/"],
      "base_url":"https://lkl.lt"},
     {"name":"KK Nevėžis", "sport":"krepšinis", "sportas_source":"195", "method":"http",
      "url":"https://www.kknevezis.lt/naujienos",
@@ -105,6 +108,21 @@ SITES = [
 
 RSS_SITES  = [s for s in SITES if "rss" in s]
 HTTP_SITES = [s for s in SITES if s.get("method") == "http"]
+
+def fix_img(site, image):
+    """Per-saito nuotraukos URL korekcijos, taikomos ABIEJUOSE scraperiuose:
+    img_replace = [kas, kuo] (paprastas replace), img_replace_re = [regex, kuo].
+    LKL atvejis: sąrašo 160x208 thumb'ai → 1214x726 originalai."""
+    if not image:
+        return image
+    rep = site.get("img_replace")
+    if rep:
+        image = image.replace(rep[0], rep[1])
+    rre = site.get("img_replace_re")
+    if rre:
+        import re as _re_fx
+        image = _re_fx.sub(rre[0], rre[1], image)
+    return image
 
 def norm_url(u):
     """URL normalizavimas dedup'ui. toplyga.lt gyvų rungtynių puslapis

@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api"))
-from _sites_config import HTTP_SITES, slim_art, norm_url
+from _sites_config import HTTP_SITES, slim_art, norm_url, fix_img
 
 try:
     import lxml  # noqa: F401
@@ -148,7 +148,7 @@ def fetch_http(site):
                 image = None
                 if img:
                     src = img.get("src") or img.get("data-src", "")
-                    image = (base + src if src.startswith("/") else src) or None
+                    image = fix_img(site, (base + src if src.startswith("/") else src) or None)
                 articles.append({
                     "site": site["name"], "sport": site.get("sport", ""),
                     "title": title, "url": url, "date": "", "image": image,
@@ -170,10 +170,7 @@ def fetch_http(site):
                 image = None
                 if img_el:
                     src = img_el.get("src") or img_el.get("data-src", "")
-                    image = (base + src if src.startswith("/") else src) or None
-                    rep = site.get("img_replace")
-                    if image and rep:
-                        image = image.replace(rep[0], rep[1])
+                    image = fix_img(site, (base + src if src.startswith("/") else src) or None)
                 if title and url:
                     articles.append({
                         "site": site["name"], "sport": site.get("sport", ""),

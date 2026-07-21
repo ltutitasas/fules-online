@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 _IMPORT_ERR = ""
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _sites_config import SITES as _SITES, slim_art as _slim_art, norm_url as _norm_url
+    from _sites_config import SITES as _SITES, slim_art as _slim_art, norm_url as _norm_url, fix_img as _fix_img
 except Exception as _e:
     _IMPORT_ERR = f"{type(_e).__name__}: {_e}"
     _SITES = []
@@ -640,7 +640,7 @@ def _fetch_http(site):
                 image = None
                 if img:
                     src = img.get("src") or img.get("data-src","")
-                    image = (base+src if src.startswith("/") else src) or None
+                    image = _fix_img(site, (base+src if src.startswith("/") else src) or None)
                 arts.append({"site":site["name"],"sport":site.get("sport",""),
                     "title":title,"url":url,"date":"","image":image,
                     "text":"","source":"HTTP","id":_art_id(url,title),
@@ -658,10 +658,7 @@ def _fetch_http(site):
                 image = None
                 if i_el:
                     src = i_el.get("src") or i_el.get("data-src","")
-                    image = (base+src if src.startswith("/") else src) or None
-                    rep = site.get("img_replace")
-                    if image and rep:
-                        image = image.replace(rep[0], rep[1])
+                    image = _fix_img(site, (base+src if src.startswith("/") else src) or None)
                 if title and url:
                     arts.append({"site":site["name"],"sport":site.get("sport",""),
                         "title":title,"url":url,"date":"","image":image,
