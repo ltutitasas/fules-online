@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LTOK lokalaus scraperio launchd agentas (kas 10 min, kai Mac nemiega).
+
+  DIEGIMAS:
+  1. Nukopijuokite šį failą:
+       cp scraper/lt.fules.ltok.plist.example ~/Library/LaunchAgents/lt.fules.ltok.plist
+  2. Faile pakeiskite ĮRAŠYKITE_URL / ĮRAŠYKITE_TOKEN į savo Upstash reikšmes
+     (tos pačios, kaip Vercel env KV_REST_API_URL / KV_REST_API_TOKEN).
+     Telegram eilutės nebūtinos – be jų tiesiog nebus TG pranešimų apie LTOK.
+  3. Įjunkite:
+       launchctl load ~/Library/LaunchAgents/lt.fules.ltok.plist
+  4. Patikra: log'as /tmp/fules-ltok.log; išjungimas – launchctl unload ...
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>lt.fules.ltok</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/macbook/Downloads/fules-online/scraper/run_ltok_local.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>KV_REST_API_URL</key><string>ĮRAŠYKITE_URL</string>
+    <key>KV_REST_API_TOKEN</key><string>ĮRAŠYKITE_TOKEN</string>
+    <key>TELEGRAM_BOT_TOKEN</key><string></string>
+    <key>TELEGRAM_CHAT_ID</key><string></string>
+  </dict>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/fules-ltok.log</string>
+  <key>StandardErrorPath</key><string>/tmp/fules-ltok.log</string>
+</dict>
+</plist>

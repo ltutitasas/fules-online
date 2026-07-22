@@ -118,6 +118,10 @@ Lietuva Basketball, BC Rytas
 
 ### HTTP saitai (scrape'ina GitHub Actions kas 2 min)
 ⚽ Top Lyga (toplyga.lt), Žalgiris futbolas (zalgiris.lt)
+🏅 **LTOK (ltok.lt)** – Cloudflare 403 Vercel/GH Actions IP. Lokalus scraperis:
+   `scraper/run_ltok_local.py` (Mac launchd kas 10 min, šablonas lt.fules.ltok.plist.example).
+   Nuxt payload JSON → ProseMirror tekstas + UUID nuotrauka → KV (html:{id}, img:{md5})
+   → publikavimas iš KV (Vercel ltok.lt negali pasiekti)
 🏀 LKL (lkl.lt), Žalgiris (zalgiris.lt), KK Nevėžis, BC Jonava
 🏒 Hockey Lietuva (hockey.lt)
 

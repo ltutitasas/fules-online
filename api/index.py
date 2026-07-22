@@ -1671,6 +1671,15 @@ def article_text():
     if host.startswith("www."): host = host[4:]
     if host not in _allowed_hosts():
         return jsonify({"text": "", "error": "Domenas neleidžiamas"}), 403
+    # ltok.lt Vercel'iui neatsako (Cloudflare) – tekstas iš KV html:{id},
+    # kurį įrašo lokalus scraperis run_ltok_local.py
+    if host == "ltok.lt":
+        arts = _kv_get("articles") or []
+        aid = next((a.get("id", "") for a in arts if a.get("url") == url), "")
+        html = _kv_get(f"html:{aid}") if aid else None
+        if html:
+            return jsonify({"text": _html_to_text(html)[:30000], "up_status": "kv"})
+        return jsonify({"text": "", "error": "LTOK tekstas dar neįrašytas (laukite lokalaus scraperio runo)"})
     try:
         r = _req.get(url, headers={"User-Agent": _UA}, timeout=8)
         soup = _BS4(r.text, _PARSER)
@@ -1852,14 +1861,25 @@ def upload_photo():
         if not SPORTAS_USER:
             return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
 
-        # 1. Parsisiunčiame nuotrauką iš originalaus šaltinio
-        img_r = _req.get(image_url, headers={"User-Agent": _UA,
-                         "Referer": image_url.split("/")[0] + "//" + image_url.split("/")[2]},
-                         timeout=15, allow_redirects=True)
-        if img_r.status_code != 200:
-            return jsonify({"ok": False, "error": f"Nepavyko parsisiųsti: HTTP {img_r.status_code}"}), 400
-
-        ct = img_r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        # 1. Parsisiunčiame nuotrauką iš originalaus šaltinio.
+        # ltok.lt Vercel'iui atsako Cloudflare 403, todėl lokalus scraperis
+        # (run_ltok_local.py) baitus padeda į KV img:{md5(url)} – imam iš ten.
+        img_bytes, ct = None, None
+        if "ltok.lt" in image_url:
+            _ik = "img:" + hashlib.md5(image_url.encode()).hexdigest()
+            cached_img = _kv_get(_ik)
+            if cached_img and cached_img.get("b64"):
+                import base64 as _b64
+                img_bytes = _b64.b64decode(cached_img["b64"])
+                ct = cached_img.get("ct", "image/jpeg")
+        if img_bytes is None:
+            img_r = _req.get(image_url, headers={"User-Agent": _UA,
+                             "Referer": image_url.split("/")[0] + "//" + image_url.split("/")[2]},
+                             timeout=15, allow_redirects=True)
+            if img_r.status_code != 200:
+                return jsonify({"ok": False, "error": f"Nepavyko parsisiųsti: HTTP {img_r.status_code}"}), 400
+            img_bytes = img_r.content
+            ct = img_r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
         ext_map = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
                    "image/gif": ".gif", "image/webp": ".jpg"}
         ext = ext_map.get(ct, ".jpg")
@@ -1879,7 +1899,7 @@ def upload_photo():
         )
         up_r = sess.post(
             upload_url,
-            data=img_r.content,
+            data=img_bytes,
             headers={
                 "Content-Type": "application/octet-stream",
                 "X-File-Name":  filename_ascii,

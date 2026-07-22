@@ -97,10 +97,12 @@ SITES = [
      "og_image_fallback": True, "image_selector":".news_item_img img",
      "text_selector":".short_text"},
     # LTOK – Cloudflare 403 "Just a moment..." blokuoja Vercel ir GitHub Actions IP
-    # {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"http",
-    #  "url":"https://ltok.lt/naujienos", "link_pattern_re": r"/naujienos/[a-z]",
-    #  "base_url":"https://ltok.lt", "title_selector": "[class*='text-ellipsis']",
-    #  "text_selector": "[class*='prose']"},
+    # (patikrinta 2026-07-22: visi keliai, įskaitant sitemap ir _payload.json).
+    # method:"local" – scrape'ina TIK lokalus Mac scraperis scraper/run_ltok_local.py
+    # (namų IP Cloudflare praleidžia). Įrašas čia reikalingas _allowed_hosts,
+    # kategorijoms ir sportas_source publikavimui.
+    {"name":"LTOK", "sport":"kitas sportas", "sportas_source":"33", "method":"local",
+     "url":"https://ltok.lt/naujienos", "base_url":"https://ltok.lt"},
 ]
 
 RSS_SITES  = [s for s in SITES if "rss" in s]
