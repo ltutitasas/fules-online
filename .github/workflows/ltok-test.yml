@@ -1,0 +1,36 @@
+name: LTOK access test
+# LAIKINAS testas: ar Cloudflare tebeblokuoja GitHub Actions IP.
+# Pasileidžia tik pakeitus ŠĮ failą; rezultatą įsicommitina į
+# scraper/ltok_actions_result.txt. Po testo failą galima trinti.
+on:
+  push:
+    paths: ['.github/workflows/ltok-test.yml']
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test LTOK endpoints
+        run: |
+          {
+            echo "run: $(date -u)"
+            for u in "https://ltok.lt/naujienos" \
+                     "https://ltok.lt/news_lt-sitemap.xml" \
+                     "https://ltok.lt/naujienos/vienu-dievinamas-kitiems-nezinomas/_payload.json"; do
+              code=$(curl -s --compressed -o /tmp/body -w "%{http_code}" \
+                -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+                --max-time 20 "$u" || echo ERR)
+              size=$(wc -c < /tmp/body | tr -d ' ')
+              echo "$code $size $u | $(head -c 120 /tmp/body | tr -d '\n\r')"
+            done
+          } > scraper/ltok_actions_result.txt
+          cat scraper/ltok_actions_result.txt
+      - name: Commit result
+        run: |
+          git config user.name "ltok-test"
+          git config user.email "actions@github.com"
+          git add scraper/ltok_actions_result.txt
+          git commit -m "test: LTOK prieigos rezultatas iš GitHub Actions [skip ci]"
+          git push
