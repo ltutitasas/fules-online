@@ -1950,7 +1950,7 @@ def upload_photo():
         chk_status = "?"
 
         # A) MD5 iš įkeltų baitų — content-addressed storage
-        h = hashlib.md5(img_r.content).hexdigest()
+        h = hashlib.md5(img_bytes).hexdigest()
         path_md5 = f"/Uploads/UGallery/photos/{h[0:2]}/{h[2:4]}/{h[4:6]}/{h[6:8]}/{h}{ext}"
         try:
             chk = _req.head(f"https://www.sportas.lt{path_md5}", timeout=5)
