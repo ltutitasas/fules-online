@@ -66,7 +66,7 @@ def tg_send(text: str) -> dict:
 _SPORT_CATS = {"krepšinis": [22, 6], "futbolas": [103, 7],
                "ledo ritulys": [10, 99], "kitas sportas": [72, 89]}
 # Kategorijų prioriteto override: {sport: {cat_id: priority}}
-_SPORT_PRIORITIES = {"ledo ritulys": {10: "1"}, "kitas sportas": {72: "1"}}
+_SPORT_PRIORITIES = {"ledo ritulys": {10: "1"}}
 _BASE = "https://www.sportas.lt/Admin/Load/UArticles"
 _UA   = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
