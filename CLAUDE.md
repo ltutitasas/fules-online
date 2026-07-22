@@ -117,7 +117,7 @@ Lietuva Basketball, BC Rytas
 🏅 Lengvoji atletika (lengvoji.lt), LTU Aquatics (ltuaquatics.com)
 
 ### HTTP saitai (scrape'ina GitHub Actions kas 2 min)
-⚽ Top Lyga (toplyga.lt), Žalgiris futbolas (zalgiris.lt), FK Riteriai
+⚽ Top Lyga (toplyga.lt), Žalgiris futbolas (zalgiris.lt)
 🏀 LKL (lkl.lt), Žalgiris (zalgiris.lt), KK Nevėžis, BC Jonava
 🏒 Hockey Lietuva (hockey.lt)
 

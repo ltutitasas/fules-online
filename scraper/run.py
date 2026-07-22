@@ -96,9 +96,6 @@ SITES = [
                   "link":"div.font-semibold a",
                   "image":"figure img"},
      "base_url":"https://zalgiris.lt"},
-    {"name":"FK Riteriai", "sport":"futbolas", "method":"http",
-     "url":"https://www.fkriteriai.lt/naujienos",
-     "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
     # 🏀 KREPŠINIS – RSS
     {"name":"BC Kibirkštis",     "sport":"krepšinis", "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},

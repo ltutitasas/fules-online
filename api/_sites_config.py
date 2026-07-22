@@ -69,9 +69,6 @@ SITES = [
                   "link":"div.font-semibold a",
                   "image":"figure img"},
      "base_url":"https://zalgiris.lt"},
-    {"name":"FK Riteriai", "sport":"futbolas", "sportas_source":"1019", "method":"http",
-     "url":"https://www.fkriteriai.lt/naujienos",
-     "link_pattern":"/post/", "base_url":"https://www.fkriteriai.lt"},
     # also_vercel: lkl.lt periodiškai blokuoja GitHub Actions IP (Cloudflare),
     # todėl LKL scrape'ina IR Vercel /api/cron-rss (Vercel IP atsako normaliai)
     {"name":"LKL", "sport":"krepšinis", "sportas_source":"30", "method":"http", "also_vercel": True,
