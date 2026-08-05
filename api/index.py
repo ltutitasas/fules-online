@@ -30,6 +30,35 @@ except Exception:
 
 app = Flask(__name__)
 
+# ⚠️ Vercel rewrite'as (vercel.json) nuo 2026-08 funkcijai perduoda NE originalų
+# kelią, o paskirtį – Flask kiekvienai užklausai matydavo PATH_INFO="/api/index.py"
+# ir grąžindavo 404 VISIEMS maršrutams (svetainė gyva, bet visas API miręs).
+# Sprendimas: rewrite originalų kelią perduoda ?__p=..., o šis WSGI sluoksnis jį
+# atstato prieš maršrutizavimą. Likę query parametrai išsaugomi.
+class _RestorePath:
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        from urllib.parse import parse_qsl, urlencode, unquote
+        qs = environ.get("QUERY_STRING", "")
+        if "__p=" in qs:
+            rest, orig = [], None
+            for k, v in parse_qsl(qs, keep_blank_values=True):
+                if k == "__p" and orig is None:
+                    orig = v
+                else:
+                    rest.append((k, v))
+            if orig:
+                if not orig.startswith("/"):
+                    orig = "/" + orig
+                environ["PATH_INFO"] = unquote(orig)
+                environ["QUERY_STRING"] = urlencode(rest)
+        return self.wsgi_app(environ, start_response)
+
+
+app.wsgi_app = _RestorePath(app.wsgi_app)
+
 KV_URL        = os.environ.get("KV_REST_API_URL", "")
 KV_TOKEN      = os.environ.get("KV_REST_API_TOKEN", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
