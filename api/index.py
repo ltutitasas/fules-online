@@ -329,8 +329,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
     html_body = _html_to_sportas(html_content) if html_content else ""
     # YouTube video ID'ai: pirma iš RSS kūno (WordPress embed'ai), o jei ten
-    # nieko – iš straipsnio puslapio (žemiau, fallback bloke)
+    # nieko – iš straipsnio puslapio (žemiau)
     _yt_vids = _yt_ids(html_content)
+    _yt_page_done = False   # ar puslapio HTML jau skenuotas dėl video
     def _plain_len(h):
         return len(_BS4(h, _PARSER).get_text(" ", strip=True)) if h else 0
 
@@ -364,6 +365,7 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                 _yt_vids = _yt_ids(str(main)) if main else []
                 if not _yt_vids:
                     _yt_vids = _yt_ids(r.text)
+            _yt_page_done = True
             for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
                 tag.decompose()
             if main:
@@ -378,6 +380,18 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                                    if len(el.get_text(strip=True)) > 10]
                     text = "\n\n".join(paras_plain[:60]) or text
         except:
+            pass
+
+    # RSS kūne video nebuvo, o puslapio dėl ilgo teksto neėmėme – pasiimam TIK
+    # dėl video. Dalis saitų video deda ATSKIRAME bloke po tekstu, ne turinyje
+    # (fkzalgiris.lt: <h5>Video</h5><div class="youtube-videos"><a href=...>),
+    # tad RSS kūne jo nėra niekada. Trumpas timeout – publikavimas turi telpėti
+    # į Vercel 10s; nepavykus tiesiog publikuojame be markerio.
+    if not _yt_vids and not _yt_page_done and article.get("url"):
+        try:
+            _yt_vids = _yt_ids(_req.get(article["url"],
+                                        headers={"User-Agent": _UA}, timeout=5).text)
+        except Exception:
             pass
 
     enriched = _ai_enrich(title, text or (_html_to_text(html_content) if html_content else ""))

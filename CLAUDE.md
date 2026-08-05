@@ -191,7 +191,11 @@ Override turi pirmenybę: `cat_ids = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CAT
 - **YouTube video** (`_yt_ids`): rasti ID virsta markeriais straipsnio gale –
   `<p>##UArticlesInsert_Video_getVideo_yt/{ID}##</p>` (kiekvienas atskiroje eilutėje).
   Šaltiniai: RSS kūnas (WP iframe embed'ai), o jei ten nieko – straipsnio puslapis:
-  pirma turinio konteineris, tada VISAS HTML. ⚠️ Pilno HTML skenavimas būtinas
+  pirma turinio konteineris, tada VISAS HTML. ⚠️ Puslapis imamas ir tada, kai RSS
+  tekstas ILGAS (t. y. teksto fallback'as nesuveikė) – fkzalgiris.lt video deda
+  ATSKIRAME bloke po tekstu (`<h5>Video</h5><div class="youtube-videos">`), tad
+  RSS kūne jo nėra niekada. Papildomas parsisiuntimas daromas tik kai video dar
+  nerastas (timeout 5s, nepavykus publikuojama be markerio). ⚠️ Pilno HTML skenavimas būtinas
   zalgiris.lt – ten video ne iframe, o Next.js JSON payload'e (`"videoUrl":"...watch?v=ID"`),
   turinyje iframe'ų 0. Konteineris renkamas PRIEŠ `decompose(["iframe",...])`,
   kitaip embed'ai jau būtų pašalinti. ID – tiksliai 11 simbolių, tad kanalų
