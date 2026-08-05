@@ -1,4 +1,0 @@
-run: Wed Jul 22 10:10:43 UTC 2026
-403 5617 https://ltok.lt/naujienos | <!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/htm
-403 5668 https://ltok.lt/news_lt-sitemap.xml | <!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/htm
-403 5828 https://ltok.lt/naujienos/vienu-dievinamas-kitiems-nezinomas/_payload.json | <!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/htm

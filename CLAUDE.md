@@ -23,9 +23,16 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 | `api/_sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja ir api/index.py, ir run_http.py. ⚠️ Pabraukimas pavadinime BŪTINAS – be jo Vercel bandytų failą paversti atskira funkcija; šakninių failų Vercel į bundle neįtraukia (buvo FUNCTION_INVOCATION_FAILED) |
 | `api/index.py` | Flask app, RSS+HTTP scraperiai, frontend HTML/JS, Service Worker, sportas.lt publikavimas. Vienas didelis failas. |
 | `scraper/run_http.py` | Atskiras HTTP-only scraperis GitHub Actions'ui (be Vercel 10s limito) |
-| `scraper/run.py` | Senas pilnas scraperis (GitHub Actions `scrape.yml`, retai naudojamas, turi SAVO seną saitų kopiją) |
+| `scraper/run_ltok_local.py` | LTOK scraperis, leidžiamas iš namų Mac'o (Cloudflare blokuoja Vercel/Actions IP) |
+| `scraper/setup-ltok.sh` + `lt.fules.ltok.plist.example` | LTOK launchd agento diegimas vienu paleidimu |
 | `.github/workflows/scrape-http.yml` | HTTP scraperio workflow (workflow_dispatch, palaiko `cycles` input) |
-| `.github/workflows/scrape.yml` | Senas workflow su schedule (GitHub jį throttlina, nepatikimas) |
+
+⚠️ 2026-08-05 ištrinti seni dublikatai – **negrąžinti**: `scraper/run.py` +
+`.github/workflows/scrape.yml` (turėjo SAVO pasenusią saitų kopiją) ir
+`scraper/ltok.py` + `.github/workflows/ltok.yml` (LTOK per Actions = Cloudflare
+403; tas workflow dar sukosi 12–17 k./parą ir KAS RUNĄ besąlygiškai perrašinėjo
+`articles` raktą – tiesiai prieš KV dietą). Taip pat ištrintas `public/index.html`
+(žr. spąstą #14).
 
 ## Atsarginė kopija / rollback
 
@@ -125,7 +132,9 @@ Lietuva Basketball, BC Rytas
 🏀 LKL (lkl.lt), Žalgiris (zalgiris.lt), KK Nevėžis, BC Jonava
 🏒 Hockey Lietuva (hockey.lt)
 
-❌ **LTOK užkomentuotas** – Cloudflare JS challenge blokuoja ir Vercel, ir GitHub Actions IP.
+✅ **LTOK veikia per lokalų scraperį** (`method:"local"`) – Cloudflare JS challenge
+blokuoja Vercel ir GitHub Actions IP, bet ne namų IP. Publikavimui tekstas ir
+nuotraukos imami iš KV (`html:{id}`, `img:{md5}`), nes Vercel ltok.lt nepasiekia.
 
 ### Site dict raktai
 - `rss` – RSS feed URL (WordPress `/feed/`)
@@ -229,7 +238,9 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
    Nepridėti lėtų operacijų į RSS kelią.
 3. **KV tinklo trukdžiai GitHub Actions**: `run_http.py` turi `_kv_retry` (3 bandymai po 4s).
 4. **GitHub Actions schedule nepatikimas** – naudoti tik workflow_dispatch per API.
-5. **LTOK = Cloudflare 403** – nebandyti įjungti be self-hosted runner ar panašaus sprendimo.
+5. **LTOK = Cloudflare 403 iš debesies** (patikrinta 2026-07-22: 403 ir sąrašui, ir
+   sitemap, ir `_payload.json`). Nebandyti grąžinti į Vercel/Actions – veikia tik
+   lokalus `run_ltok_local.py` iš namų IP.
 6. **`merged.sort()` būtinas** po merge – kitaip seni straipsniai atsiduria viršuje.
 7. **image_selector > og:image** – og:image kartais rodo ne herojinę nuotrauką (FK Žalgiris atvejis).
 8. **`articles` KV yra SLIM** – be `html_content`/`text`. Publikavimui HTML imamas iš
