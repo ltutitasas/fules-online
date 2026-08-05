@@ -249,7 +249,17 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     senas `fules-online` account'as. Žiūrėti `statuses[]` įrašą su kontekstu
     **„Vercel – fules-online2"** – jo „success" = deploy gyvas; „failure" =
     build krito ir gyvas liko SENAS deploy!
-14. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
+14. **⚠️ Vercel rewrite NAIKINA kelią** (2026-08-05): Vercel funkcijai perduoda
+    rewrite'o PASKIRTĮ, ne originalų kelią – Flask visoms užklausoms matydavo
+    `PATH_INFO=/api/index.py` ir 404'indavo VISUS maršrutus (svetainė atrodė gyva,
+    nes `/` ateidavo iš `public/index.html` + edge cache, bet visas API miręs:
+    dashboard be naujienų, publikavimas „Unexpected token '<'", cron-rss nedirbo).
+    Sprendimas: `vercel.json` rewrite perduoda `?__p=/$1`, o `_RestorePath` WSGI
+    sluoksnis (api/index.py, iškart po `app = Flask()`) atstato `PATH_INFO`.
+    **Nekeisti vercel.json į paprastą `destination: /api/index.py` – API vėl mirs.**
+    Diagnostika: laikinas catch-all `@app.route("/<path:p>")`, grąžinantis
+    `request.path` + `PATH_INFO`, parodo, ką Flask realiai gauna.
+15. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
     blokuose, žodžiai suskaldyti `<span>` gabalais per vidurį. Todėl teksto ištraukimas
     renka ir „lapinius" div (be blokinių vaikų, žr. `_is_wrapper_div`), o plain tekstui
     naudojamas `_el_text` – get_text BE separatoriaus (get_text(" ") darydavo „20 17m.",

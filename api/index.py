@@ -2291,27 +2291,3 @@ def get_sources():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
-# ── LAIKINA DIAGNOSTIKA (2026-08-05: visi /api/* grąžina Flask 404) ──────────
-# Catch-all: jei šis atsakymas ateina, vadinasi mūsų app'as gyvas ir matome,
-# kokį kelią realiai gauna Flask (SCRIPT_NAME/PATH_INFO). Jei ir toliau
-# gaunamas tuščias Flask 404 – Vercel serve'ina NE mūsų modulį.
-@app.route("/__diag", methods=["GET"])
-@app.route("/<path:_anypath>", methods=["GET"])
-def _diag_catch_all(_anypath=""):
-    import os as _os
-    env = request.environ
-    return jsonify({
-        "diag": True,
-        "seen_path": request.path,
-        "script_root": request.script_root,
-        "url": request.url,
-        "PATH_INFO": env.get("PATH_INFO", ""),
-        "SCRIPT_NAME": env.get("SCRIPT_NAME", ""),
-        "routes_count": len(list(app.url_map.iter_rules())),
-        "module_name": __name__,
-        "import_err": _IMPORT_ERR,
-        "vercel_region": _os.environ.get("VERCEL_REGION", ""),
-        "commit": _os.environ.get("VERCEL_GIT_COMMIT_SHA", "")[:7],
-    })
