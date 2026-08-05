@@ -258,6 +258,25 @@ def _html_to_sportas(html_content):
     result = _re.sub(r'<p>\s*The post\s+.+?appeared first on\s+.+?\.?\s*</p>', '', result, flags=_re.DOTALL | _re.IGNORECASE).strip()
     return result
 
+def _yt_ids(html):
+    """YouTube video ID'ai iš HTML: iframe embed, paprasta nuoroda ARBA JSON
+    payload (zalgiris.lt Next.js turi "videoUrl":"...watch?v=ID", o straipsnio
+    turinyje iframe'o NĖRA). Grąžina unikalius, eilės tvarka.
+    ID – tiksliai 11 simbolių, tad kanalo nuorodos (/@BCZalgirisKaunas) nekliūva."""
+    if not html:
+        return []
+    import re as _re_y
+    pat = (r'(?:youtube(?:-nocookie)?\.com/(?:embed/|shorts/|live/|v/)'
+           r'|youtu\.be/'
+           r'|youtube(?:-nocookie)?\.com/watch\?(?:[^"\'<>\s]{0,120}?[&;])?v='
+           r')([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])')
+    out = []
+    for m in _re_y.finditer(pat, html):
+        if m.group(1) not in out:
+            out.append(m.group(1))
+    return out[:10]
+
+
 def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     sport    = article.get("sport", "")
     site     = article.get("site", "")
@@ -275,6 +294,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
 
     # Jei yra originalus HTML iš RSS – naudojame jį išsaugant formatavimą
     html_body = _html_to_sportas(html_content) if html_content else ""
+    # YouTube video ID'ai: pirma iš RSS kūno (WordPress embed'ai), o jei ten
+    # nieko – iš straipsnio puslapio (žemiau, fallback bloke)
+    _yt_vids = _yt_ids(html_content)
     def _plain_len(h):
         return len(_BS4(h, _PARSER).get_text(" ", strip=True)) if h else 0
 
@@ -286,8 +308,9 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
             r = _req.get(article["url"], headers={"User-Agent": _UA}, timeout=8)
             from bs4 import BeautifulSoup as _BSt
             soup = _BSt(r.text, _PARSER)
-            for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
-                tag.decompose()
+            # Turinio konteinerį renkame PRIEŠ decompose – kitaip iframe'ai (su
+            # jais ir YouTube embed'ai) jau būtų pašalinti. Vėlesnis decompose
+            # išvalo ir šį elementą, nes jis lieka medyje.
             # Pirma bandome site-specific text_selector (iš article dict arba _SITES config)
             _site_cfg = next((s for s in _SITES if s["name"] == site), {})
             txt_sel = article.get("text_selector", "") or _site_cfg.get("text_selector", "")
@@ -300,6 +323,15 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
                    soup.select_one('.fck') or \
                    soup.select_one('article') or \
                    soup.select_one('main')
+            if not _yt_vids:
+                # Pirma tik straipsnio konteineryje (tikslu), tada visame puslapyje –
+                # zalgiris.lt video guli Next.js JSON payload'e ("videoUrl"), o
+                # matomame turinyje jokio iframe'o nėra
+                _yt_vids = _yt_ids(str(main)) if main else []
+                if not _yt_vids:
+                    _yt_vids = _yt_ids(r.text)
+            for tag in soup(["script","style","nav","footer","header","aside","iframe","noscript","form","button"]):
+                tag.decompose()
             if main:
                 # Naudojame _html_to_sportas – išsaugo <strong>, <em> formatavimą
                 fb_body = _html_to_sportas(str(main))
@@ -334,6 +366,11 @@ def _do_post(article, photo_path="", photo_title="", photo_tags=""):
     if not html_body:
         return False, ("Straipsnis dar be teksto (šaltinis paskelbė tik antraštę) – "
                        "pabandykite vėliau, kai tekstas atsiras")
+    # YouTube video – sportas.lt markeriai straipsnio pabaigoje, kiekvienas
+    # atskiroje eilutėje (##UArticlesInsert_Video_getVideo_yt/ID##)
+    if _yt_vids:
+        html_body += "".join(f"<p>##UArticlesInsert_Video_getVideo_yt/{v}##</p>"
+                             for v in _yt_vids)
     # Suliejame AI tags + photo modal gaires.
     # sportas.lt tagų su kabutėmis neišsaugo – jas šaliname („Žalgiris“ → Žalgiris).
     # Nuotraukos pavadinime (leadPhoto[title]/photo_title) kabutės lieka kaip įvesta.

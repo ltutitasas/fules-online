@@ -179,6 +179,14 @@ Override turi pirmenybę: `cat_ids = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CAT
 - `_html_to_sportas()` konvertuoja HTML į sportas.lt formatą **išsaugant bold/em**
   (negalima naudoti get_text() – pradangina formatavimą; buvo LKL bug'as)
 - `_ai_enrich()` – AI tagai ir teksto praturtinimas
+- **YouTube video** (`_yt_ids`): rasti ID virsta markeriais straipsnio gale –
+  `<p>##UArticlesInsert_Video_getVideo_yt/{ID}##</p>` (kiekvienas atskiroje eilutėje).
+  Šaltiniai: RSS kūnas (WP iframe embed'ai), o jei ten nieko – straipsnio puslapis:
+  pirma turinio konteineris, tada VISAS HTML. ⚠️ Pilno HTML skenavimas būtinas
+  zalgiris.lt – ten video ne iframe, o Next.js JSON payload'e (`"videoUrl":"...watch?v=ID"`),
+  turinyje iframe'ų 0. Konteineris renkamas PRIEŠ `decompose(["iframe",...])`,
+  kitaip embed'ai jau būtų pašalinti. ID – tiksliai 11 simbolių, tad kanalų
+  nuorodos (`youtube.com/@Kanalas`) nekliūva.
 
 ## Frontend + notificationai
 
