@@ -42,18 +42,23 @@ class _RestorePath:
     def __call__(self, environ, start_response):
         from urllib.parse import parse_qsl, urlencode, unquote
         qs = environ.get("QUERY_STRING", "")
+        orig = None
         if "__p=" in qs:
-            rest, orig = [], None
+            rest = []
             for k, v in parse_qsl(qs, keep_blank_values=True):
                 if k == "__p" and orig is None:
                     orig = v
                 else:
                     rest.append((k, v))
-            if orig:
-                if not orig.startswith("/"):
-                    orig = "/" + orig
-                environ["PATH_INFO"] = unquote(orig)
-                environ["QUERY_STRING"] = urlencode(rest)
+            environ["QUERY_STRING"] = urlencode(rest)
+        # Titulinis: __p tuščias ARBA jo nėra (Vercel root'ui parametro
+        # kartais neperduoda) – tokiu atveju funkcijos kelias reiškia „/"
+        if not orig and environ.get("PATH_INFO", "").rstrip("/").endswith("/api/index.py"):
+            orig = "/"
+        if orig:
+            if not orig.startswith("/"):
+                orig = "/" + orig
+            environ["PATH_INFO"] = unquote(orig)
         return self.wsgi_app(environ, start_response)
 
 
