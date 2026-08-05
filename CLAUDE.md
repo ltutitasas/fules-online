@@ -257,8 +257,13 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     Sprendimas: `vercel.json` rewrite perduoda `?__p=/$1`, o `_RestorePath` WSGI
     sluoksnis (api/index.py, iškart po `app = Flask()`) atstato `PATH_INFO`.
     **Nekeisti vercel.json į paprastą `destination: /api/index.py` – API vėl mirs.**
+    Root'ui Vercel `__p` neperduoda, tad sluoksnis turi fallback: kai `__p` nėra,
+    o kelias baigiasi `/api/index.py`, tai laikoma `/`.
     Diagnostika: laikinas catch-all `@app.route("/<path:p>")`, grąžinantis
     `request.path` + `PATH_INFO`, parodo, ką Flask realiai gauna.
+    Tuo pačiu ištrintas `public/index.html` – statiniai failai turi pirmenybę
+    prieš rewrite'ą, tad jis šešėliavo `_INDEX_HTML` ir rodė gegužės frontend'ą
+    (be APP_TOKEN, be /api/version polling'o). **Į `public/` nieko nedėti.**
 15. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
     blokuose, žodžiai suskaldyti `<span>` gabalais per vidurį. Todėl teksto ištraukimas
     renka ir „lapinius" div (be blokinių vaikų, žr. `_is_wrapper_div`), o plain tekstui
