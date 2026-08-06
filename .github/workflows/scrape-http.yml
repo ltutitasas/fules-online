@@ -8,6 +8,15 @@ on:
         required: false
         default: '1'
 
+# Vienu metu – tik VIENAS runas. Naujas dispatch'as atšaukia ankstesnį (queued
+# arba dar besisukantį). Be šito, kai GitHub Actions strigo (2026-08-05 major
+# outage), kas 2 min siunčiami runai kaupėsi šimtais ir atsigavus būtų pasileidę
+# vienu metu – užklausų antplūdis į scrape'inamus saitus (lkl.lt blokuoja).
+# Scrape'as idempotentiškas: nutrauktas runas nieko nesugadina, kitas padaro tą patį.
+concurrency:
+  group: scrape-http
+  cancel-in-progress: true
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
