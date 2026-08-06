@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api"))
-from _sites_config import HTTP_SITES, slim_art, norm_url, fix_img
+from _sites_config import HTTP_SITES, slim_art, norm_url, fix_img, is_spam
 
 try:
     import lxml  # noqa: F401
@@ -229,6 +229,8 @@ def main():
             s = futures[fut]
             try:
                 arts = fut.result()
+                # Reklaminis SEO šlamštas svetima kalba – neįleidžiam (žr. is_spam)
+                arts = [a for a in arts if not is_spam(a.get("title", ""))]
                 all_arts.extend(arts)
                 if arts:
                     _status_updates[s["name"]] = {"ok": now_iso, "n": len(arts)}

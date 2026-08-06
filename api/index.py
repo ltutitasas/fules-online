@@ -11,7 +11,9 @@ from email.utils import parsedate_to_datetime
 _IMPORT_ERR = ""
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _sites_config import SITES as _SITES, slim_art as _slim_art, norm_url as _norm_url, fix_img as _fix_img
+    from _sites_config import (SITES as _SITES, slim_art as _slim_art,
+                               norm_url as _norm_url, fix_img as _fix_img,
+                               is_spam as _is_spam)
 except Exception as _e:
     _IMPORT_ERR = f"{type(_e).__name__}: {_e}"
     _SITES = []
@@ -20,6 +22,11 @@ except Exception as _e:
         return {k: a[k] for k in _SLIM_FIELDS if a.get(k)}
     def _norm_url(u):
         return u or ""
+    # Fallback'ai BŪTINI – be jų importo bėda virstų NameError'u scrape metu
+    def _fix_img(site, image):
+        return image
+    def _is_spam(title):
+        return False
 
 # lxml ~5-10x greitesnis; fallback į html.parser jei Vercel lxml neturi
 try:
@@ -781,6 +788,9 @@ def run_scraper(mode="all"):
             site = futs[fut]
             try:
                 arts = fut.result()
+                # Reklaminis SEO šlamštas svetima kalba (fk-panevezys.lt feed'e –
+                # vokiški kazino/pokerio tekstai) į sąrašą neįleidžiamas
+                arts = [a for a in arts if not _is_spam(a.get("title", ""))]
                 all_arts.extend(arts)
                 if arts:
                     _status_updates[site["name"]] = {"ok": now_iso0, "n": len(arts)}
@@ -820,7 +830,9 @@ def run_scraper(mode="all"):
         if not u: return True
         h = _up(u).netloc.lower()
         return (h[4:] if h.startswith("www.") else h) in _hosts
-    existing = [a for a in existing if _url_ok(a.get("url", ""))]
+    # ...ir jau KV gulintį šlamštą (kitaip senos šiukšlės liktų iki TTL/300 ribos)
+    existing = [a for a in existing
+                if _url_ok(a.get("url", "")) and not _is_spam(a.get("title", ""))]
     id_seen  = (chk[2] if len(chk) > 2 else None) or [0] * len(ids)
     url_seen = (chk[3] if len(chk) > 3 else None) or [0] * len(ids)
     # scrape_status atnaujinam TAUPIAI: "ok" laikas keičiamas tik jei senesnis nei
@@ -912,8 +924,21 @@ def run_scraper(mode="all"):
     # senų įrašų, kuriuos merged[:300] vis tiek nukerta: jų nuotraukų sprendimas
     # būtų amžinas darbas veltui (užimdavo visą 6 vietų eilę, badavo kitus saitus)
     _existing_ids = {a["id"] for a in existing}
+    # ...ir tik tie, kuriuos pirmą kartą pamatėme prieš <6h. Jei per tiek laiko
+    # nuotrauka neatsirado, jos ir nebus (utenosjuventus.lt straipsnis be jokio
+    # paveikslo puslapyje buvo bandomas kas runą amžinai). Dar nematyti (nėra
+    # first_seen) visada bandomi – kitaip po prastovos naujienos liktų be foto.
+    _img_cut = datetime.now(timezone.utc) - timedelta(hours=6)
+    def _img_worth(a):
+        fs = first_seen.get(a["id"], "")
+        if not fs:
+            return True
+        try:
+            return datetime.fromisoformat(str(fs).replace("Z", "+00:00")) >= _img_cut
+        except Exception:
+            return True
     arts_no_img = [a for a in all_arts if a.get("url") and a["site"] in _OG_FALLBACK_SITES and
-                   (a["id"] in _existing_ids or a["id"] in new_ids) and
+                   (a["id"] in _existing_ids or a["id"] in new_ids) and _img_worth(a) and
                    (not a.get("image") or (a["site"] in _IMG_SEL_SITES and a["id"] not in _existing_img))]
     _IMG_DBG.clear()
     _IMG_DBG["cand"] = len(arts_no_img)

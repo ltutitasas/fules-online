@@ -108,6 +108,40 @@ SITES = [
 RSS_SITES  = [s for s in SITES if "rss" in s]
 HTTP_SITES = [s for s in SITES if s.get("method") == "http"]
 
+# ── Reklaminio šlamšto filtras ──────────────────────────────────────
+# fk-panevezys.lt RSS srautas užterštas vokiškais/angliškais kazino ir pokerio
+# SEO tekstais (14 iš 24 straipsnių 2026-08-05). Filtras universalus – taikomas
+# VISIEMS saitams abiejuose scraperiuose (api/index.py ir scraper/run_http.py).
+_LT_CHARS = set("ąčęėįšųūžĄČĘĖĮŠŲŪŽ")
+_DE_CHARS = set("äöüßÄÖÜ")            # vokiškos raidės, kurių lietuviškame tekste nėra
+_SPAM_WORDS = ("casino", "kazino", "poker", "spielautomat", "wetten", "betting",
+               "bookmaker", "gambling", "slots", "roulette", "blackjack",
+               "glucksspiel", "echtgeld", "freispiele", "spielverhalten",
+               "spieler", "gaming", "tabling", "bonus", "jackpot", "bet365",
+               "link factory", "verification", "backlink", "seo ")
+_FOREIGN_STOP = {"der", "die", "das", "und", "fur", "mit", "von", "beim", "zum",
+                 "zur", "als", "des", "ein", "eine", "auf", "wie", "im", "den",
+                 "the", "and", "for", "with", "of", "to", "how", "why", "best",
+                 "online", "in", "is", "are", "your"}
+
+
+def is_spam(title):
+    """True, jei antraštė – reklaminis SEO šlamštas svetima kalba.
+    Lietuviška antraštė (bent viena ą/č/ę/ė/į/š/ų/ū/ž) VISADA praleidžiama,
+    tad tikros naujienos nenukenčia."""
+    t = (title or "").strip()
+    if not t or any(ch in _LT_CHARS for ch in t):
+        return False
+    low = t.lower()
+    if any(ch in _DE_CHARS for ch in t):     # vokiškos raidės be lietuviškų
+        return True
+    if any(w in low for w in _SPAM_WORDS):   # lošimų temos raktažodžiai
+        return True
+    import re as _re_sp
+    words = set(_re_sp.findall(r"[a-z]+", low))
+    return len(words & _FOREIGN_STOP) >= 2   # ≥2 svetimos kalbos tarnybiniai žodžiai
+
+
 def fix_img(site, image):
     """Per-saito nuotraukos URL korekcijos, taikomos ABIEJUOSE scraperiuose:
     img_replace = [kas, kuo] (paprastas replace), img_replace_re = [regex, kuo].

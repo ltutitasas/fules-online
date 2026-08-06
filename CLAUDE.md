@@ -32,7 +32,7 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 `scraper/ltok.py` + `.github/workflows/ltok.yml` (LTOK per Actions = Cloudflare
 403; tas workflow dar sukosi 12–17 k./parą ir KAS RUNĄ besąlygiškai perrašinėjo
 `articles` raktą – tiesiai prieš KV dietą). Taip pat ištrintas `public/index.html`
-(žr. spąstą #14).
+(žr. spąstą #15).
 
 ## Atsarginė kopija / rollback
 
@@ -251,20 +251,30 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
    `html:{id}` rakto, o jo nesant – fallback parsisiunčia iš straipsnio URL (`_do_post`).
 9. **Paveikslai cache'inami** – og:image/image_selector fetch daromas tik straipsniams,
    kurių paveikslo dar nėra KV `articles` (kitaip kas runą siųstųsi dešimtys puslapių).
-10. **`recent_ids` – dict, kaupiamas** – NEPERRAŠYTI plikų list'u, kitaip badge/notificationai
+   Papildomai: bandoma tik tiems, kuriuos pirmą kartą pamatėme prieš <6h (`_img_worth`) –
+   jei per tiek nuotrauka neatsirado, jos nebus (buvo amžinai kartojama utenosjuventus.lt
+   straipsniui, kurio puslapyje apskritai nėra paveikslo). Dar nematyti bandomi visada.
+10. **Reklaminio šlamšto filtras** (`is_spam` faile `api/_sites_config.py`) – fk-panevezys.lt
+   RSS srautas užterštas vokiškais/angliškais kazino ir pokerio SEO tekstais (13 iš 24
+   straipsnių 2026-08-05). Taisyklė: antraštė su bent viena lietuviška raide (ąčęėįšųūž)
+   VISADA praleidžiama; be jų – atmetama, jei yra vokiškų raidžių (äöüß), lošimų
+   raktažodžių ar ≥2 svetimi tarnybiniai žodžiai. Filtruojama abiejuose scraperiuose
+   IR merge metu (kad jau įrašytos šiukšlės išsivalytų). Patikrinta su 300 KV straipsnių:
+   atmesta 13, visos tikros naujienos liko.
+11. **`recent_ids` – dict, kaupiamas** – NEPERRAŠYTI plikų list'u, kitaip badge/notificationai
     vėl suges (senas bug'as: badge dingdavo per 1-2 min vietoj 3h).
-11. **`anthropic` išimtas iš requirements.txt** (AI išjungtas) – įjungiant `_ai_enrich`,
+12. **`anthropic` išimtas iš requirements.txt** (AI išjungtas) – įjungiant `_ai_enrich`,
     paketą reikia grąžinti.
-12. **`lxml` su fallback** – Vercel'yje lxml realiai NEUŽSIKRAUNA (nors requirements.txt yra),
+13. **`lxml` su fallback** – Vercel'yje lxml realiai NEUŽSIKRAUNA (nors requirements.txt yra),
     kodas persijungia į `html.parser`. GitHub Actions ir lokaliai lxml veikia.
     Patikrinti: `/api/health` rodo aktyvų parserį.
-13. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
+14. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
     `curl -s https://api.github.com/repos/ltutitasas/fules-online/commits/<sha>/status`
     ⚠️ Bendra `state` visada „failure", nes prie repo dar prikabintas užblokuotas
     senas `fules-online` account'as. Žiūrėti `statuses[]` įrašą su kontekstu
     **„Vercel – fules-online2"** – jo „success" = deploy gyvas; „failure" =
     build krito ir gyvas liko SENAS deploy!
-14. **⚠️ Vercel rewrite NAIKINA kelią** (2026-08-05): Vercel funkcijai perduoda
+15. **⚠️ Vercel rewrite NAIKINA kelią** (2026-08-05): Vercel funkcijai perduoda
     rewrite'o PASKIRTĮ, ne originalų kelią – Flask visoms užklausoms matydavo
     `PATH_INFO=/api/index.py` ir 404'indavo VISUS maršrutus (svetainė atrodė gyva,
     nes `/` ateidavo iš `public/index.html` + edge cache, bet visas API miręs:
@@ -279,7 +289,7 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     Tuo pačiu ištrintas `public/index.html` – statiniai failai turi pirmenybę
     prieš rewrite'ą, tad jis šešėliavo `_INDEX_HTML` ir rodė gegužės frontend'ą
     (be APP_TOKEN, be /api/version polling'o). **Į `public/` nieko nedėti.**
-15. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
+16. **Iš Word įkeltas turinys (rytasvilnius.lt)** – tekstas ne `<p>`, o `div.s3`/`div.s8`
     blokuose, žodžiai suskaldyti `<span>` gabalais per vidurį. Todėl teksto ištraukimas
     renka ir „lapinius" div (be blokinių vaikų, žr. `_is_wrapper_div`), o plain tekstui
     naudojamas `_el_text` – get_text BE separatoriaus (get_text(" ") darydavo „20 17m.",
