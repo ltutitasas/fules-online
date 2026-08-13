@@ -858,6 +858,7 @@ def run_scraper(mode="all"):
     # Naujas = nematytas id IR nematytas url (apsauga nuo redaguotų pavadinimų).
     # Saitams su renotify_on_rename pakanka naujo id – pervadinimas = nauja naujiena
     _RENAME_OK = {s["name"] for s in _SITES if s.get("renotify_on_rename")}
+    _fs_before = set(first_seen)   # būsena PRIEŠ šio runo papildymus (diagnostikai)
     new_ids = {a["id"] for a, s1, s2 in zip(all_arts, id_seen, url_seen)
                if not int(s1 or 0) and (not int(s2 or 0) or a["site"] in _RENAME_OK)}
 
@@ -984,7 +985,7 @@ def run_scraper(mode="all"):
         if a["id"] in new_ids and len(_NEW_DBG) < 8:
             _NEW_DBG.append({"site": a.get("site", ""), "title": a.get("title", "")[:60],
                              "date": str(a.get("date", ""))[:25],
-                             "fs": bool(first_seen.get(a["id"]))})
+                             "fs": a["id"] in _fs_before})
 
     all_arts.sort(key=_sort_key, reverse=True)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
