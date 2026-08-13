@@ -1119,6 +1119,23 @@ def run_scraper(mode="all"):
             try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff
             except: return True
         fresh_cands = [a for a in sorted_arts if a["id"] in new_ids and _is_fresh(a)]
+        # FANTOMAI: seni straipsniai, kurie vėl palaikyti naujais (būtent jie
+        # anksčiau lėkdavo į Telegram). Įrašom į KV, kad kitą kartą matytume
+        # priežastį: fs=false → KV prarado first_seen; fs=true → pakito id.
+        # Rašom TIK kai toks atvejis yra (normaliai – 0 papildomų komandų).
+        _phantoms = [a for a in sorted_arts if a["id"] in new_ids and not _is_fresh(a)]
+        if _phantoms:
+            try:
+                _plog = _kv_get("phantom_log") or []
+                for a in _phantoms[:5]:
+                    _plog.append({"ts": now_iso, "site": a.get("site", ""),
+                                  "title": a.get("title", "")[:70],
+                                  "date": str(a.get("date", ""))[:25],
+                                  "fs": a["id"] in _fs_before, "id": a["id"][:10]})
+                _kv_pipeline([["SET", "phantom_log",
+                               json.dumps(_plog[-20:], ensure_ascii=False), "EX", 86400*7]])
+            except Exception:
+                pass
         # Atominis vartas nuo dublikatų: SADD notified_ids grąžina 1 tik tam, kurį
         # ŠIS runas pirmas pažymi. Pakartotiniai/lygiagretūs runai gauna 0 → nebesiunčia.
         notify_arts = []
@@ -1894,8 +1911,13 @@ def cron_rss():
     """Tik RSS saitai – greita (<10s), skirta cron-job.org kas 2 min"""
     try:
         total, new_count = run_scraper(mode="rss")
-        return jsonify({"ok": True, "total": total, "new": new_count, "mode": "rss",
-                        "img_dbg": _IMG_DBG, "new_dbg": _NEW_DBG})
+        resp = {"ok": True, "total": total, "new": new_count, "mode": "rss",
+                "img_dbg": _IMG_DBG, "new_dbg": _NEW_DBG}
+        # ?plog=1 – parodo fantomų registrą (senus straipsnius, kurie buvo
+        # palaikyti naujais). Kainuoja 1 KV GET, tad tik pagal pareikalavimą.
+        if request.args.get("plog"):
+            resp["phantom_log"] = _kv_get("phantom_log") or []
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
