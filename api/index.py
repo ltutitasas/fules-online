@@ -768,6 +768,10 @@ def _sort_key(art):
         except: return datetime.min
 
 _IMG_DBG = {}   # laikina og/REST nuotraukų diagnostika (rodo /api/cron-rss)
+# Kas šiame rune palaikyta NAUJU + ar turėjo first_seen įrašą. Diagnostikai:
+# senas straipsnis su fs=False reiškia, kad KV prarado jo pėdsakus (dėl to
+# fchegelmann.com naujienos lėkdavo į Telegram). Rodo /api/cron-rss.
+_NEW_DBG = []
 
 def run_scraper(mode="all"):
     """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
@@ -973,6 +977,14 @@ def run_scraper(mode="all"):
         if aid in new_ids and aid not in first_seen:
             first_seen[aid] = now_iso
             first_seen_changed = True
+
+    # Diagnostika: ką laikome nauju ir ar KV turėjo jo first_seen (žr. _NEW_DBG)
+    _NEW_DBG.clear()
+    for a in all_arts:
+        if a["id"] in new_ids and len(_NEW_DBG) < 8:
+            _NEW_DBG.append({"site": a.get("site", ""), "title": a.get("title", "")[:60],
+                             "date": str(a.get("date", ""))[:25],
+                             "fs": bool(first_seen.get(a["id"]))})
 
     all_arts.sort(key=_sort_key, reverse=True)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
@@ -1882,7 +1894,7 @@ def cron_rss():
     try:
         total, new_count = run_scraper(mode="rss")
         return jsonify({"ok": True, "total": total, "new": new_count, "mode": "rss",
-                        "img_dbg": _IMG_DBG})
+                        "img_dbg": _IMG_DBG, "new_dbg": _NEW_DBG})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
