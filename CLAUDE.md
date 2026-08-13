@@ -299,6 +299,11 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 
 - `/api/debug-fetch?site=SaitoVardas&token=...` – parodo HTTP statusą, HTML ilgį,
   selektorių matches, html_preview. Naudinga aiškinantis kodėl saitas negrąžina straipsnių.
+- `/api/cron-rss?plog=1` – **fantomų registras**: seni straipsniai, kurie buvo palaikyti
+  naujais (2026-08-13 tokie fchegelmann.com straipsniai lėkdavo į Telegram). Įrašuose
+  `fs=false` → KV prarado `first_seen` (duomenų praradimas); `fs=true` → pakito straipsnio
+  id (šaltinis keitė pavadinimą/URL). Rašoma į KV `phantom_log` tik įvykus atvejui.
+  Telegram tokių nebesiunčia – vartai reikalauja, kad straipsnio SAVA data būtų <48h.
 - `/api/scrape-status` – kada kiekvienas saitas paskutinį kartą grąžino straipsnių
   (jei saito nėra arba `ok` senas – saitas tyliai miręs, tikrinti debug-fetch).
 - `/api/version` – greitas patikrinimas ar scraperiai gyvi (`ts` articles_meta viduje).
