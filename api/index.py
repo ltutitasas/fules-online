@@ -1089,8 +1089,18 @@ def run_scraper(mode="all"):
     # Telegram – tik nauji IR sistemos pirmo pamatymo laikas ne senesnis nei 24h
     if new_ids and seen_count:
         tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        # Straipsnio SAVOS datos riba (naive, kaip _sort_key). 48h su atsarga
+        # laiko juostų svyravimams – _sort_key tzinfo nukerta, neverčia į UTC.
+        _pub_cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(tzinfo=None)
         def _is_fresh(art):
-            # Naudojame first_seen (kada MES pamatėme), ne RSS datą
+            # 1) Straipsnio SAVA data turi būti šviežia. Be šito bet kokia
+            #    seen_ids/first_seen bėda (TTL, KV klaida, pakitęs id) senus
+            #    straipsnius paverčia „naujais" ir jie lekia į Telegram, nors
+            #    dashboard'e lieka savo vietoje pagal datą (fchegelmann.com atvejis).
+            d = _sort_key(art)
+            if d != datetime.min and d < _pub_cutoff:
+                return False
+            # 2) ...ir MŪSŲ pirmo pamatymo laikas ne senesnis nei 24h
             d = first_seen.get(art["id"], "")
             if not d: return True   # pirmas kartas – tikrai naujas
             try: return datetime.fromisoformat(d.replace("Z","+00:00")) >= tg_cutoff

@@ -286,10 +286,15 @@ def main():
 
     print(f"✅ Išsaugota: {len(new_arts)} naujų")
 
-    # Telegram (ta pati pirmo paleidimo apsauga)
-    if seen_count:
+    # Telegram (ta pati pirmo paleidimo apsauga). Siunčiam tik šviežius pagal
+    # straipsnio SAVĄ datą – kad seen_ids/first_seen bėda nepaverstų senų
+    # straipsnių „naujienomis" (žr. fchegelmann.com atvejį api/index.py)
+    pub_cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(tzinfo=None)
+    tg_arts = [a for a in new_arts
+               if _sort_key(a) == datetime.min or _sort_key(a) >= pub_cutoff]
+    if seen_count and tg_arts:
         lines = []
-        for a in new_arts[:5]:
+        for a in tg_arts[:5]:
             lines.append(f'🏅 <a href="{a["url"]}">{a["title"]}</a>')
         lines.append("\n🔗 fules-online2.vercel.app")
         tg_send("\n".join(lines))

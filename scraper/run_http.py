@@ -437,7 +437,13 @@ def main():
 
     # Telegram – tik nauji IR pirmo pamatymo laikas ne senesnis nei 24h
     tg_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    # Straipsnio savos datos riba (naive, kaip _sort_key) – apsauga nuo senų
+    # straipsnių, kurie dėl seen_ids/first_seen bėdos vėl atrodo nauji
+    pub_cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(tzinfo=None)
     def is_fresh(art):
+        d0 = _sort_key(art)
+        if d0 != datetime.min and d0 < pub_cutoff:
+            return False
         d = first_seen.get(art["id"], "")
         if not d: return True
         try: return datetime.fromisoformat(d.replace("Z", "+00:00")) >= tg_cutoff
