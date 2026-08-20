@@ -2070,7 +2070,19 @@ def upload_photo():
         try:
             resp = up_r.json()
         except Exception:
-            return jsonify({"ok": False, "error": f"Netikėtas atsakymas: {up_r.text[:200]}"}), 400
+            # Tuščias/HTML atsakymas beveik visada reiškia neprisijungusią sesiją
+            # (sportas.lt tyliai permeta į /Admin/login). Rodom KONKRETŲ požymį,
+            # kitaip vartotojas mato tik "Netikėtas atsakymas:" be nieko.
+            _body = (up_r.text or "").strip()
+            _hint = ""
+            if not _body:
+                _hint = " – tuščias atsakymas (greičiausiai neprisijungta prie sportas.lt)"
+            elif "login" in _body.lower() or "<html" in _body[:200].lower():
+                _hint = " – gautas HTML/login puslapis (sesija negalioja)"
+            return jsonify({"ok": False,
+                            "error": f"Netikėtas atsakymas (HTTP {up_r.status_code}){_hint}: {_body[:200]}",
+                            "up_status": up_r.status_code,
+                            "final_url": up_r.url[:200]}), 400
 
         if not resp.get("success"):
             return jsonify({"ok": False, "error": f"Įkėlimo klaida: {resp}"}), 400
@@ -2380,3 +2392,55 @@ def get_sources():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sportas-check", methods=["GET"])
+def sportas_check():
+    """Diagnostika: ar prisijungimas prie sportas.lt admino veikia.
+    Rodo kiekvieną žingsnį atskirai – iškart matyti, kur lūžta
+    (cookies iš KV / login POST / admin puslapio pasiekiamumas)."""
+    if not _auth_ok(): return _auth_fail()
+    out = {"user_set": bool(SPORTAS_USER), "pass_set": bool(SPORTAS_PASS)}
+    try:
+        cached = _kv_get("sportas_cookies")
+        out["kv_cookies"] = sorted(cached.keys()) if isinstance(cached, dict) else None
+
+        # 1. Sesija iš KV cookies – ar admin puslapis atsidaro?
+        s1 = _req.Session()
+        s1.headers.update({"User-Agent": _UA})
+        s1.params = {"ileisk": "1"}
+        if isinstance(cached, dict):
+            for k, v in cached.items():
+                s1.cookies.set(k, v, domain="www.sportas.lt")
+        r1 = s1.get(f"{_BASE}/editArticle/", allow_redirects=False, timeout=10)
+        out["cached_session"] = {"status": r1.status_code, "len": len(r1.text),
+                                 "location": r1.headers.get("Location", "")[:120]}
+
+        # 2. Naujas login (kaip _session)
+        s2 = _req.Session()
+        s2.headers.update({"User-Agent": _UA})
+        s2.params = {"ileisk": "1"}
+        lr = s2.post("https://www.sportas.lt/Admin/check/",
+                     data={"Username": SPORTAS_USER, "Password": SPORTAS_PASS,
+                           "return": "", "closeWindow": "",
+                           "referer": "/Admin/login?ileisk=1"},
+                     allow_redirects=True, timeout=15,
+                     headers={"Referer": "https://www.sportas.lt/Admin/login?ileisk=1"})
+        out["login"] = {"status": lr.status_code, "final_url": lr.url[:150],
+                        "cookies": sorted(s2.cookies.get_dict().keys()),
+                        "looks_like_login_page": "Password" in lr.text[:4000]}
+
+        # 3. Ar po login'o admin puslapis realus (yra šaltinių dropdown'as)?
+        r3 = s2.get(f"{_BASE}/editArticle/", allow_redirects=False, timeout=10)
+        out["after_login"] = {"status": r3.status_code, "len": len(r3.text),
+                              "location": r3.headers.get("Location", "")[:120],
+                              "has_sourceSelect": 'id="sourceSelect"' in r3.text}
+
+        # 4. Nuotraukų įkėlimo puslapis (ten lūžta publikavimas)
+        r4 = s2.get("https://www.sportas.lt/Admin/Load/UGallery/addPhotos/",
+                    allow_redirects=False, timeout=10)
+        out["gallery_page"] = {"status": r4.status_code, "len": len(r4.text),
+                               "location": r4.headers.get("Location", "")[:120]}
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+    return jsonify(out)
