@@ -2038,6 +2038,25 @@ def upload_photo():
         if not SPORTAS_USER:
             return jsonify({"ok": False, "error": "SPORTAS_USER nenustatytas"}), 400
 
+        # 0. WordPress sumažintas variantas (pvz. IMG_2514-768x512.jpg) – sportas.lt
+        # verta įkelti ORIGINALĄ (be dydžio priesagos). Kortelėje dashboard'e lieka
+        # mažas, o publikuojama pilna kokybė. Tikrinam HEAD – jei originalo nėra
+        # (404) arba jis per didelis, liekam prie turimo URL.
+        import re as _re_full
+        _m_full = _re_full.match(r"^(.*)-\d+x\d+(\.[A-Za-z]{3,4})$", image_url.split("?")[0])
+        if _m_full:
+            _full_url = _m_full.group(1) + _m_full.group(2)
+            try:
+                _hr = _req.head(_full_url, headers={"User-Agent": _UA}, timeout=6,
+                                allow_redirects=True)
+                _clen = int(_hr.headers.get("Content-Length") or 0)
+                if (_hr.status_code == 200
+                        and _hr.headers.get("Content-Type", "").startswith("image/")
+                        and _clen < 8 * 1024 * 1024):
+                    image_url = _full_url
+            except Exception:
+                pass
+
         # 1. Parsisiunčiame nuotrauką iš originalaus šaltinio.
         # ltok.lt Vercel'iui atsako Cloudflare 403, todėl lokalus scraperis
         # (run_ltok_local.py) baitus padeda į KV img:{md5(url)} – imam iš ten.

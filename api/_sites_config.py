@@ -26,7 +26,10 @@ SITES = [
     {"name":"LFF",               "sport":"futbolas",  "sportas_source":"13",   "rss":"https://www.lff.lt/feed/", "og_image_fallback": True},
     {"name":"BC Kibirkštis",     "sport":"krepšinis", "sportas_source":"54",   "rss":"https://bckibirkstis.lt/feed/", "og_image_fallback": True, "text_selector":".entry-summary"},
     {"name":"BC Neptūnas",       "sport":"krepšinis", "sportas_source":"131",  "rss":"https://bcneptunas.lt/feed/", "og_image_fallback": True, "image_selector": ".single-hero-img"},
-    {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/", "og_image_fallback": True},
+    # 2026-08 nauja tema (lietkabelis-2026) neteko og:image – nuotrauka imama
+    # per WP featured img klasę (RSS sraute nuotraukų nėra visai)
+    {"name":"BC Lietkabelis",    "sport":"krepšinis", "sportas_source":"38",   "rss":"https://www.kklietkabelis.lt/feed/",
+     "og_image_fallback": True, "image_selector": "img.wp-post-image"},
     {"name":"BC Šiauliai",       "sport":"krepšinis", "sportas_source":"143",  "rss":"https://bcsiauliai.lt/feed/", "og_image_fallback": True},
     # Feed'as be content:encoded (tik excerpt su "Skaityti toliau") ir be nuotraukų;
     # puslapis NETURI og:image, todėl nuotrauka tik per image_selector (+srcset max)

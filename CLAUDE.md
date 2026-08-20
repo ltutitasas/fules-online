@@ -185,6 +185,10 @@ Override turi pirmenybę: `cat_ids = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CAT
 `{"saito vardas": ("foto_šaltinio_id", "parašas nuotr.")}`. Default: `("3", "Organizatorių nuotr.")`
 
 ### Nuotraukų formatai
+- **Publikuojant imamas ORIGINALAS**: WordPress URL su dydžio priesaga
+  (`IMG_2514-768x512.jpg`) `upload_photo` pakeičiamas į `IMG_2514.jpg`, jei HEAD
+  grąžina 200 ir <8MB. Kortelėje dashboard'e lieka mažas variantas (greitis),
+  o į sportas.lt keliauja pilna kokybė.
 - sportas.lt galerija priima tik **jpg/png/gif**. WEBP/AVIF konvertuojami į JPEG
   per **Pillow** (`upload_photo`), failo vardas irgi keičiamas į `.jpg`.
   lietuva.basketball nuotraukas laiko TIK `.webp` (jpg varianto serveryje nėra,
