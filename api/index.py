@@ -1019,6 +1019,18 @@ def run_scraper(mode="all"):
                             if a["id"] not in _fetched_ids
                             and _norm_url(a.get("url", "")) not in _fetched_urls]
     merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
+    # Dedup pagal (saitas, pavadinimas): tas pats straipsnis kartais gyvena dviem
+    # URL – WordPress pervadina slug'ą (/127725-2/ → /svarbia-pergale.../), o
+    # lengvoji.lt tą patį įrašą rodo per dvi kategorijas. Sort stabilus, tad
+    # pirmas lieka ką tik parsiųstas įrašas su dabartiniu URL.
+    _seen_st, _dedup = set(), []
+    for a in merged:
+        _k = (a.get("site", ""), " ".join((a.get("title", "") or "").split()).casefold())
+        if _k in _seen_st:
+            continue
+        _seen_st.add(_k)
+        _dedup.append(a)
+    merged = _dedup
     # Slim saugojimas – be html_content/text (jie dideli; html atskirai raktuose html:{id})
     slim = [_slim_art(a) for a in merged[:300]]
     slim_json = json.dumps(slim, ensure_ascii=False)
@@ -1140,7 +1152,12 @@ def run_scraper(mode="all"):
         # ŠIS runas pirmas pažymi. Pakartotiniai/lygiagretūs runai gauna 0 → nebesiunčia.
         notify_arts = []
         if fresh_cands:
-            sadd_res = _kv_pipeline([["SADD", "notified_ids", a["id"]] for a in fresh_cands])
+            # Raktas pagal saitą+pavadinimą, ne id: pervadinus slug'ą id pasikeičia,
+            # o pranešimas apie tą pačią naujieną neturi ateiti antrą kartą
+            def _tg_key(a):
+                _t = " ".join((a.get("title", "") or "").split()).casefold()
+                return "t:" + hashlib.md5((a.get("site", "") + "|" + _t).encode()).hexdigest()[:16]
+            sadd_res = _kv_pipeline([["SADD", "notified_ids", _tg_key(a)] for a in fresh_cands])
             _kv_pipeline([["EXPIRE", "notified_ids", 86400*2]])
             notify_arts = [a for a, r in zip(fresh_cands, sadd_res) if int(r or 0) == 1]
         new_arts = notify_arts[:5]
@@ -1790,9 +1807,14 @@ def version():
 @app.route("/api/health", methods=["GET"])
 def health():
     """Diagnostika: ar modulis pilnai užsikrovė, koks parseris, kiek saitų."""
+    try:
+        from PIL import Image as _PILChk   # noqa: F401
+        _pillow = True
+    except Exception:
+        _pillow = False
     return jsonify({"ok": not _IMPORT_ERR, "import_error": _IMPORT_ERR,
                     "sites": len(_SITES), "parser": _PARSER,
-                    "python": sys.version.split()[0],
+                    "python": sys.version.split()[0], "pillow": _pillow,
                     "kv": bool(KV_URL), "app_token_set": bool(APP_TOKEN)})
 
 @app.route("/api/scrape-status", methods=["GET"])
@@ -2035,11 +2057,37 @@ def upload_photo():
                 return jsonify({"ok": False, "error": f"Nepavyko parsisiųsti: HTTP {img_r.status_code}"}), 400
             img_bytes = img_r.content
             ct = img_r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        # sportas.lt galerija priima tik jpg/png/gif – WEBP konvertuojam į JPEG.
+        # lietuva.basketball nuotraukas laiko TIK .webp formatu (jpg varianto
+        # serveryje nėra), tad be konvertavimo tokių straipsnių publikuoti nepavyksta.
+        _converted = False
+        if ct in ("image/webp", "image/avif") or image_url.lower().split("?")[0].endswith((".webp", ".avif")):
+            try:
+                from PIL import Image as _PILImage
+                import io as _io
+                _im = _PILImage.open(_io.BytesIO(img_bytes))
+                if _im.mode not in ("RGB", "L"):
+                    _im = _im.convert("RGB")
+                _buf = _io.BytesIO()
+                _im.save(_buf, format="JPEG", quality=90)
+                img_bytes = _buf.getvalue()
+                ct = "image/jpeg"
+                _converted = True
+            except Exception as _ce:
+                # Pillow nėra arba nuotrauka sugadinta – siunčiam kaip JPEG vardu;
+                # jei sportas.lt tikrina turinį, klaida bus aiški (žr. žemiau)
+                ct = "image/jpeg"
+                _conv_err = f"{type(_ce).__name__}: {_ce}"
+
         ext_map = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
                    "image/gif": ".gif", "image/webp": ".jpg"}
         ext = ext_map.get(ct, ".jpg")
         raw_name = image_url.split("?")[0].rstrip("/").split("/")[-1]
-        filename = raw_name if any(raw_name.lower().endswith(e) for e in [".jpg",".jpeg",".png",".gif",".webp"]) \
+        # .webp/.avif vardą keičiam į .jpg (turinys jau konvertuotas)
+        for _bad in (".webp", ".avif"):
+            if raw_name.lower().endswith(_bad):
+                raw_name = raw_name[:-len(_bad)] + ".jpg"
+        filename = raw_name if any(raw_name.lower().endswith(e) for e in [".jpg",".jpeg",".png",".gif"]) \
                    else (raw_name or "photo") + ext
         # HTTP headeriai turi būti ASCII – pašaliname ne-ASCII simbolius iš failvardo
         import unicodedata as _ud3

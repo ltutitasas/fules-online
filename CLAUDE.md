@@ -184,6 +184,25 @@ Override turi pirmenybę: `cat_ids = _SITE_CATS_OVERRIDE.get(site) or _SPORT_CAT
 ### Foto šaltiniai (`_SOURCE_MAP` funkcijoje `upload_photo`)
 `{"saito vardas": ("foto_šaltinio_id", "parašas nuotr.")}`. Default: `("3", "Organizatorių nuotr.")`
 
+### Nuotraukų formatai
+- sportas.lt galerija priima tik **jpg/png/gif**. WEBP/AVIF konvertuojami į JPEG
+  per **Pillow** (`upload_photo`), failo vardas irgi keičiamas į `.jpg`.
+  lietuva.basketball nuotraukas laiko TIK `.webp` (jpg varianto serveryje nėra,
+  net og:image rodo webp) – be konvertavimo tokie straipsniai nepasipublikuodavo
+  („❌ Netikėtas atsakymas" su tuščiu tekstu).
+- ⚠️ Pillow turi būti **pyproject.toml** dependencies – Vercel diegia iš ten,
+  ne iš requirements.txt (todėl ir lxml Vercel'yje neveikia, žr. spąstą #13).
+  Patikra: `/api/health` rodo `"pillow": true`.
+
+### Dublikatai: tas pats straipsnis dviem URL
+Šaltiniai pervadina slug'us (WordPress `/127725-2/` → `/svarbia-pergale.../`,
+zalgiris.lt `https-www-youtube-com-watch-v-...` → `futbolas-vs-regbis`), o
+lengvoji.lt tą patį įrašą rodo per dvi kategorijas. Merge metu daromas **dedup
+pagal (saitas, pavadinimas)** – sort stabilus, tad lieka ką tik parsiųstas įrašas
+su dabartiniu URL. Telegram `notified_ids` raktas irgi pagal saitą+pavadinimą
+(ne id), kad pervadintas straipsnis nesiųstų antro pranešimo.
+Patikrinta su 300 KV straipsnių: pašalinti 4, visi tikri dublikatai.
+
 ### Teksto formatavimas
 - `_html_to_sportas()` konvertuoja HTML į sportas.lt formatą **išsaugant bold/em**
   (negalima naudoti get_text() – pradangina formatavimą; buvo LKL bug'as)

@@ -344,6 +344,16 @@ def main():
                          if a["id"] not in fetched_ids
                          and norm_url(a.get("url", "")) not in fetched_urls]
     merged.sort(key=_sort_key, reverse=True)
+    # Dedup pagal (saitas, pavadinimas) – tas pats straipsnis dviem URL
+    # (pervadintas slug'as arba dvi kategorijos). Žr. api/index.py komentarą.
+    _seen_st, _dedup = set(), []
+    for a in merged:
+        _k = (a.get("site", ""), " ".join((a.get("title", "") or "").split()).casefold())
+        if _k in _seen_st:
+            continue
+        _seen_st.add(_k)
+        _dedup.append(a)
+    merged = _dedup
     slim = [slim_art(a) for a in merged[:300]]
     slim_json = json.dumps(slim, ensure_ascii=False)
     new_articles_hash = hashlib.md5(slim_json.encode()).hexdigest()
@@ -453,7 +463,11 @@ def main():
     if fresh and seen_count:  # seen_ids tuščias = pirmas paleidimas, nesiunčiame
         # Atominis vartas nuo dublikatų: SADD notified_ids grąžina 1 tik tam, kurį
         # ŠIS runas pirmas pažymi. Pakartotiniai/lygiagretūs runai gauna 0 → nesiunčia.
-        sadd_res = kv_pipeline([["SADD", "notified_ids", a["id"]] for a in fresh])
+        # Raktas pagal saitą+pavadinimą, ne id (pervadintas slug'as nekartoja pranešimo)
+        def _tg_key(a):
+            _t = " ".join((a.get("title", "") or "").split()).casefold()
+            return "t:" + hashlib.md5((a.get("site", "") + "|" + _t).encode()).hexdigest()[:16]
+        sadd_res = kv_pipeline([["SADD", "notified_ids", _tg_key(a)] for a in fresh])
         kv_pipeline([["EXPIRE", "notified_ids", 86400*2]])
         fresh = [a for a, r in zip(fresh, sadd_res) if int(r or 0) == 1]
     if fresh and seen_count:
