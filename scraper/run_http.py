@@ -47,7 +47,10 @@ def kv_pipeline(cmds, timeout=15):
     if not cmds: return []
     def _do():
         r = _req.post(f"{KV_URL}/pipeline", headers=_HDR, timeout=timeout, json=cmds)
-        r.raise_for_status()   # 4xx/5xx → retry, paskui exception
+        # 4xx/5xx → retry, paskui exception SU Upstash paaiškinimu
+        # (403 = bazė sustabdyta/viršyta kvota, 401 = blogas tokenas)
+        if r.status_code >= 400:
+            raise RuntimeError(f"KV HTTP {r.status_code}: {r.text[:200]}")
         data = r.json()
         if not isinstance(data, list):   # Upstash klaida = dict {"error":...}
             raise RuntimeError(f"KV pipeline klaida: {str(data)[:200]}")

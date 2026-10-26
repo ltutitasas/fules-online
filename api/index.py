@@ -146,7 +146,10 @@ def _kv_pipeline(cmds, timeout=8):
     r = _req.post(f"{KV_URL}/pipeline",
                   headers={"Authorization": f"Bearer {KV_TOKEN}"},
                   json=cmds, timeout=timeout)
-    r.raise_for_status()   # 4xx/5xx → exception
+    # 4xx/5xx → exception SU Upstash paaiškinimu (raise_for_status body numeta;
+    # 403 = bazė sustabdyta/viršyta kvota, 401 = blogas tokenas – skirtumas svarbus)
+    if r.status_code >= 400:
+        raise RuntimeError(f"KV HTTP {r.status_code}: {r.text[:200]}")
     data = r.json()
     if not isinstance(data, list):   # Upstash klaida = dict {"error":...}
         raise RuntimeError(f"KV pipeline klaida: {str(data)[:200]}")
