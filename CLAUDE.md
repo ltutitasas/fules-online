@@ -75,6 +75,14 @@ Niekada ne-overwrite'ina: `merged = nauji + [seni kurių id nesikartoja]`, tada
 `merged.sort(key=_sort_key, reverse=True)` ir saugoma `merged[:300]`.
 Be šito vienas scraperis ištrintų kito straipsnius.
 
+**RSS budėtojas**: `scraper/rss_watchdog.py` (paleidžiamas scrape-http.yml gale)
+tikrina `/api/scrape-status` ir, jei RSS saitai nescrape'inti >15 min, pats
+paleidžia `/api/cron-rss`. Reikalingas todėl, kad **cron-job.org Job 1 po mūsų
+svetainės gedimų automatiškai išsijungia** (2026-08-05 Vercel maršrutų lūžis,
+2026-10-26 Upstash kvota) – abu kartus RSS stovėjo PARAS. Job 2 nenukenčia, nes
+kreipiasi į GitHub API. Kaina normaliu režimu – 1 KV skaitymas per runą.
+⚠️ Job 1 vis tiek reikia įjungti rankomis cron-job.org – watchdog tik gelbsti.
+
 **Kodėl ne GitHub Actions schedule**: free repo scheduled workflows GitHub
 throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – patikimas.
 

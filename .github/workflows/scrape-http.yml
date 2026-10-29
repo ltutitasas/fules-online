@@ -41,3 +41,11 @@ jobs:
           TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
           CYCLES:               ${{ github.event.inputs.cycles || '1' }}
         run: python scraper/run_http.py
+
+      # RSS budėtojas: cron-job.org Job 1 po mūsų svetainės gedimų jau DU kartus
+      # automatiškai išsijungė (2026-08-05, 2026-10-26) ir RSS naujienos stovėjo
+      # paromis. Šis workflow nenukenčia (kreipiasi į GitHub API), tad tikrina ir
+      # prireikus paleidžia RSS pats. Normaliai – 1 KV skaitymas per runą.
+      - name: RSS watchdog
+        continue-on-error: true
+        run: python scraper/rss_watchdog.py
