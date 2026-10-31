@@ -24,6 +24,9 @@ KV_TOKEN = os.environ["KV_REST_API_TOKEN"]
 _HDR     = {"Authorization": f"Bearer {KV_TOKEN}"}
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
+# Vieša nuoroda Telegram žinutėse – per env, kad persikėlus į kitą Vercel
+# account'ą nereikėtų keisti kodo (GitHub repo variable PUBLIC_URL)
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://fules-online2.vercel.app").rstrip("/")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -480,7 +483,7 @@ def main():
         for a in fresh[:5]:
             lines.append(f'{sport_icon.get(a.get("sport",""),"🏆")} <a href="{a["url"]}">{a["title"]}</a>')
         if len(fresh) > 5: lines.append(f"\n+{len(fresh)-5} daugiau")
-        lines.append("\n🔗 fules-online2.vercel.app")
+        lines.append("\n🔗 " + PUBLIC_URL.split("//")[-1])
         tg_send("\n".join(lines))
         print(f"📨 Telegram: {len(fresh)} naujos")
 

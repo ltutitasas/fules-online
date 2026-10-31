@@ -79,6 +79,10 @@ SPORTAS_PASS  = os.environ.get("SPORTAS_PASS", "")
 TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT       = os.environ.get("TELEGRAM_CHAT_ID", "")
 APP_TOKEN     = os.environ.get("APP_TOKEN", "")
+# Vieša svetainės nuoroda (Telegram žinutėse). Per env – kad persikėlus į kitą
+# Vercel account'ą nereikėtų keisti kodo (2026-10-31 fules-online2 išjungtas
+# pasiekus Hobby limitą; prieš tai taip pat buvo keltas iš fules-online)
+PUBLIC_URL    = os.environ.get("PUBLIC_URL", "https://fules-online2.vercel.app").rstrip("/")
 
 def _auth_ok():
     """Publikavimo/admin endpointų apsauga. Kol APP_TOKEN env nenustatytas – atvira
@@ -1174,7 +1178,7 @@ def run_scraper(mode="all"):
             extra = len(notify_arts) - 5
             if extra > 0:
                 lines.append(f"\n+{extra} daugiau naujienų")
-            lines.append("\n🔗 fules-online2.vercel.app")
+            lines.append("\n🔗 " + PUBLIC_URL.split("//")[-1])
             tg_send("\n".join(lines))
 
     return len(sorted_arts), len(new_ids)
@@ -1699,7 +1703,7 @@ async function swPoll() {
             body:     icon + ' ' + notifArt.title,
             tag:      'sporto-naujienos',
             renotify: true,
-            data:     { url: notifArt.url || 'https://fules-online2.vercel.app/' },
+            data:     { url: notifArt.url || self.location.origin + '/' },
           });
         }
       }
@@ -1725,11 +1729,11 @@ self.addEventListener('message', e => {
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || 'https://fules-online2.vercel.app/';
+  const url = e.notification.data?.url || self.location.origin + '/';
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
       for (const c of cs) {
-        if (c.url.startsWith('https://fules-online2.vercel.app') && 'focus' in c)
+        if (c.url.startsWith(self.location.origin) && 'focus' in c)
           return c.focus();
       }
       return self.clients.openWindow(url);

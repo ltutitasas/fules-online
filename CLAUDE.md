@@ -9,9 +9,13 @@ Lietuvos sporto naujienų agregatorius. Scrape'ina LT sporto klubų/federacijų
 svetaines, deduplikuoja, rodo dashboard'ą, siunčia Telegram + naršyklės
 notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt adminą.
 
-- **Gyvas URL**: https://fules-online2.vercel.app (senas fules-online Vercel
-  account'as užblokuotas – jo deploy status GitHube visada „failure", žiūrėti
-  „Vercel – fules-online2" statusą)
+- **Gyvas URL**: nustatomas env kintamuoju `PUBLIC_URL` (Vercel env + GitHub repo
+  variable). Kode užkoduoto domeno NĖRA – Service Worker naudoja `self.location.origin`.
+  ⚠️ 2026-10-31 `fules-online2` Vercel išjungė (402 `DEPLOYMENT_DISABLED`) pasiekus
+  Hobby **Fluid Active CPU 4h/mėn** limitą; prieš tai taip pat buvo keltas iš
+  `fules-online`. Persikėlimo žingsniai – skyriuje „Perkėlimas į kitą Vercel account'ą".
+  Deploy statusą GitHube turi kiekvienas prikabintas account'as – žiūrėti dabartinio
+  projekto kontekstą (seni visada „failure").
 - **GitHub repo**: https://github.com/ltutitasas/fules-online (deploy automatinis per Vercel push'inus į main)
 - **Hostingas**: Vercel Hobby planas (⚠️ 10s serverless timeout limitas!)
 - **Saugykla**: Vercel KV (Upstash Redis, REST API)
@@ -33,6 +37,31 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 403; tas workflow dar sukosi 12–17 k./parą ir KAS RUNĄ besąlygiškai perrašinėjo
 `articles` raktą – tiesiai prieš KV dietą). Taip pat ištrintas `public/index.html`
 (žr. spąstą #15).
+
+## Perkėlimas į kitą Vercel account'ą
+
+Kartojasi, nes Hobby planas duoda tik **4 val. Fluid Active CPU/mėn**, o vien RSS
+scrape'as prie 2 min ritmo suvartoja lygiai ~4 val. (išmatuota: 0,67 s CPU per runą
+× 21 600 runų). Pasiekus limitą VISKAS grąžina 402 `DEPLOYMENT_DISABLED`.
+
+1. Naujas Vercel account'as (kitas el. paštas; Gmail +aliasas tinka) → **Add New
+   Project** → importuoti `ltutitasas/fules-online`. Tą patį repo gali naudoti keli
+   account'ai vienu metu.
+2. Naujo projekto **Environment Variables** (Settings → Environment Variables):
+   `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+   `APP_TOKEN`, `SPORTAS_USER`, `SPORTAS_PASS` ir **`PUBLIC_URL`** = naujas adresas
+   (pvz. `https://fules-online3.vercel.app`). Po to – **Redeploy**.
+3. **GitHub** → Settings → Secrets and variables → Actions → **Variables** →
+   `PUBLIC_URL` = tas pats naujas adresas (naudoja run_http.py Telegram žinutėms ir
+   rss_watchdog.py).
+4. **cron-job.org Job 1** → pakeisti URL į `https://<naujas>/api/cron-rss`
+   (Job 2 nekeisti – jis kreipiasi į GitHub API).
+5. Patikra: `/api/health` (turi rodyti `"pillow": true`), `/api/version` (`count` > 0
+   po poros minučių), tada publikavimas.
+6. Seną projektą Vercel'yje galima ištrinti, kad nesimaišytų jo „failure" deploy statusas.
+
+KV duomenys nekeičiami – naujas projektas rašo į tą pačią Upstash bazę, tad straipsniai
+ir `seen_ids` lieka (jokio Telegram spam'o).
 
 ## Atsarginė kopija / rollback
 
@@ -60,7 +89,7 @@ Dėl Vercel 10s limito scrape'inimas padalintas:
 
 ```
 cron-job.org Job 1 (kas ~1-2 min)
-  → POST https://fules-online2.vercel.app/api/cron-rss
+  → POST https://<PUBLIC_URL>/api/cron-rss
   → run_scraper(mode="rss") – TIK RSS saitai, telpa į <10s
 
 cron-job.org Job 2 (kas 2 min)

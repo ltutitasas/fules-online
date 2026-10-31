@@ -15,7 +15,8 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 
-BASE = os.environ.get("APP_BASE_URL", "https://fules-online2.vercel.app")
+BASE = (os.environ.get("APP_BASE_URL") or os.environ.get("PUBLIC_URL")
+        or "https://fules-online2.vercel.app").rstrip("/")
 # scrape_status „ok" rašomas tik kas ~10 min (KV taupymas), tad riba turi būti didesnė
 STALE_MIN = float(os.environ.get("RSS_STALE_MIN", "15"))
 
