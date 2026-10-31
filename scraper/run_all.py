@@ -36,10 +36,21 @@ import run_http as rh          # noqa: E402  HTTP fetch + Top Lyga parašai
 from api import index as idx   # noqa: E402  bendras variklis
 
 
+# Kiekvieno ciklo saitų rezultatai {saitas: (šeima, straipsnių)} – anotacijoms
+_counts = {}
+
+
+def rss_fetch_counted(site):
+    arts = idx._fetch_rss(site)
+    _counts[site["name"]] = ("RSS", len(arts))
+    return arts
+
+
 def http_fetch_with_sig(site):
     """HTTP saitas TIKSLIAI kaip run_http.main: fetch_http, o renotify_on_text
     saitams (Top Lyga) į id įtraukiamas straipsnio turinio parašas."""
     arts = rh.fetch_http(site)
+    _counts[site["name"]] = ("HTTP", len(arts))
     if site.get("renotify_on_text"):
         txt = [a for a in arts if a.get("url")]
         if txt:
@@ -94,20 +105,36 @@ def main():
         if wait > 0:
             time.sleep(wait)
         c0 = time.monotonic()
+        _counts.clear()
         try:
             total, new = idx.run_scraper(mode="all", http_fetch=http_fetch_with_sig,
-                                         extra_writes=tl_hist_writes)
+                                         extra_writes=tl_hist_writes,
+                                         rss_fetch=rss_fetch_counted)
             ok += 1
             img = idx._IMG_DBG
+            dt = time.monotonic() - c0
             print(f"[{i + 1}/{cycles}] {datetime.now(timezone.utc):%H:%M:%S} UTC  "
-                  f"{time.monotonic() - c0:.1f} s | straipsnių {total} | naujų {new} | "
+                  f"{dt:.1f} s | straipsnių {total} | naujų {new} | "
                   f"foto eilė {img.get('cand', 0)}, išspręsta {img.get('resolved', 0)}")
             for n in idx._NEW_DBG:
                 print(f"      + {n['site']}: {n['title']}")
+            # GitHub anotacijos – matomos Actions sąsajoje ir per viešą API be
+            # prisijungimo (žurnalai be tokeno neprieinami). Tušti saitai = įspėjimas:
+            # taip iškart matyti, jei kuris saitas ima blokuoti GitHub IP.
+            fam = lambda f: [(nm, n) for nm, (ff, n) in _counts.items() if ff == f]
+            r, h = fam("RSS"), fam("HTTP")
+            print(f"::notice title=Ciklas {i + 1}/{cycles}::"
+                  f"RSS {sum(n > 0 for _, n in r)}/{len(r)} saitų ({sum(n for _, n in r)} str.) · "
+                  f"HTTP {sum(n > 0 for _, n in h)}/{len(h)} ({sum(n for _, n in h)} str.) · "
+                  f"naujų {new} · {dt:.1f} s")
+            empty = sorted(nm for nm, (_, n) in _counts.items() if n == 0)
+            if empty:
+                print(f"::warning title=Tušti saitai (ciklas {i + 1})::{', '.join(empty)}")
         except Exception as e:
             # Vienas nepavykęs ciklas (pvz. KV tinklo trikdis) nelaužo kitų –
             # kitas ciklas tą patį darbą padarys iš naujo (scrape idempotentiškas)
             print(f"[{i + 1}/{cycles}] ❌ {type(e).__name__}: {str(e)[:200]}")
+            print(f"::error title=Ciklas {i + 1}/{cycles} nepavyko::{type(e).__name__}: {str(e)[:200]}")
     # Raudonas runas GitHub'e tik kai NĖ VIENAS ciklas nepavyko
     sys.exit(0 if ok else 1)
 

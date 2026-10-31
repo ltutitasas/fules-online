@@ -361,10 +361,11 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
     Patikrinti: `/api/health` rodo aktyvų parserį.
 14. **Vercel build/deploy būseną** galima patikrinti be Vercel CLI per GitHub API:
     `curl -s https://api.github.com/repos/ltutitasas/fules-online/commits/<sha>/status`
-    ⚠️ Bendra `state` visada „failure", nes prie repo dar prikabintas užblokuotas
-    senas `fules-online` account'as. Žiūrėti `statuses[]` įrašą su kontekstu
-    **„Vercel – fules-online2"** – jo „success" = deploy gyvas; „failure" =
-    build krito ir gyvas liko SENAS deploy!
+    ⚠️ Prie repo prikabinti ir seni užblokuoti account'ai („Account is blocked"),
+    o pirmasis ir dabartinis projektai abu vadinasi `fules-online` – kontekstas
+    „Vercel – fules-online" KARTOJASI. Dabartinį atskirti pagal `target_url`, kuriame
+    yra **`/titas5/`**: `.../commits/<sha>/statuses` → filtruoti `'/titas5/' in target_url`.
+    „success" = deploy gyvas; „failure" = build krito ir gyvas liko SENAS deploy!
 15. **⚠️ Vercel rewrite NAIKINA kelią** (2026-08-05): Vercel funkcijai perduoda
     rewrite'o PASKIRTĮ, ne originalų kelią – Flask visoms užklausoms matydavo
     `PATH_INFO=/api/index.py` ir 404'indavo VISUS maršrutus (svetainė atrodė gyva,
@@ -408,6 +409,11 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
   Duomenis kaupia `run_all.py` į `tl_hist` (tik pokyčio metu, 0 naujų HTTP – tekstas
   imamas iš jau atsisiųsto `fetch_text_sig` puslapio). Frontend mygtukas „📜 Top Lyga pakeitimai".
 - GitHub Actions logs: https://github.com/ltutitasas/fules-online/actions
+- **Ciklų rezultatai be prisijungimo** – run_all.py kiekvieną ciklą rašo GitHub
+  anotaciją („RSS 18/18 saitų (175 str.) · HTTP 7/7 · naujų 0 · 3 s"), o tuščius
+  saitus – įspėjimu. Žurnalai per API be tokeno neprieinami (403), anotacijos – taip:
+  `curl -s .../actions/workflows/scrape-http.yml/runs?per_page=1` → run id →
+  `.../actions/runs/<id>/jobs` → job id → `.../check-runs/<job_id>/annotations`.
 - cron-job.org dashboard – execution history (200 OK / 204 No Content = OK)
 
 ## Env kintamieji / Secrets

@@ -783,7 +783,7 @@ _IMG_DBG = {}   # laikina og/REST nuotraukų diagnostika (rodo /api/cron-rss)
 # fchegelmann.com naujienos lėkdavo į Telegram). Rodo /api/cron-rss.
 _NEW_DBG = []
 
-def run_scraper(mode="all", http_fetch=None, extra_writes=None):
+def run_scraper(mode="all", http_fetch=None, extra_writes=None, rss_fetch=None):
     """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)
 
     http_fetch   – HTTP saito parsiuntimo funkcija (site -> [straipsniai]). GitHub
@@ -791,7 +791,9 @@ def run_scraper(mode="all", http_fetch=None, extra_writes=None):
                    Lyga teksto parašais – kad ID būtų IDENTIŠKI ankstesniems
                    (_fetch_http pavadinimus traukia šiek tiek kitaip).
     extra_writes – (all_arts, new_ids, now_iso) -> [KV komandos], pridedamos į
-                   bendrą rašymo pipeline (Top Lyga tl_hist versijų istorija)."""
+                   bendrą rašymo pipeline (Top Lyga tl_hist versijų istorija).
+    rss_fetch    – RSS saito parsiuntimo funkcija (numatyta _fetch_rss); run_all.py
+                   ją apgaubia, kad suskaičiuotų saitų rezultatus anotacijoms."""
     now_iso0 = datetime.now(timezone.utc).isoformat()
     rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
     # rss režime papildomai imami HTTP saitai su also_vercel (pvz. LKL, kurį
@@ -803,7 +805,7 @@ def run_scraper(mode="all", http_fetch=None, extra_writes=None):
     all_arts   = []
     _status_updates = {}   # {site: {"ok","n"}} – merge'inam į scrape_status po KV skaitymo
     with ThreadPoolExecutor(max_workers=16) as ex:
-        futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
+        futs = {ex.submit(rss_fetch or _fetch_rss, s): s for s in rss_sites}
         futs.update({ex.submit(http_fetch or _fetch_http, s): s for s in http_sites})
         for fut in as_completed(futs):
             site = futs[fut]
