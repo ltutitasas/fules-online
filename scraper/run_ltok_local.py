@@ -297,7 +297,7 @@ def main():
         for a in tg_arts[:5]:
             lines.append(f'🏅 <a href="{a["url"]}">{a["title"]}</a>')
         lines.append("\n🔗 " + os.environ.get(
-            "PUBLIC_URL", "https://fules-online2.vercel.app").rstrip("/").split("//")[-1])
+            "PUBLIC_URL", "https://fules-online-ivory.vercel.app").rstrip("/").split("//")[-1])
         tg_send("\n".join(lines))
 
 

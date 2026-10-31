@@ -9,7 +9,7 @@ Lietuvos sporto naujienų agregatorius. Scrape'ina LT sporto klubų/federacijų
 svetaines, deduplikuoja, rodo dashboard'ą, siunčia Telegram + naršyklės
 notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt adminą.
 
-- **Gyvas URL**: nustatomas env kintamuoju `PUBLIC_URL` (Vercel env + GitHub repo
+- **Gyvas URL**: **https://fules-online-ivory.vercel.app** (nuo 2026-10-31; Vercel projektas `fules-online` naujame account'e). Nustatomas env kintamuoju `PUBLIC_URL` (Vercel env + GitHub repo
   variable). Kode užkoduoto domeno NĖRA – Service Worker naudoja `self.location.origin`.
   ⚠️ 2026-10-31 `fules-online2` Vercel išjungė (402 `DEPLOYMENT_DISABLED`) pasiekus
   Hobby **Fluid Active CPU 4h/mėn** limitą; prieš tai taip pat buvo keltas iš

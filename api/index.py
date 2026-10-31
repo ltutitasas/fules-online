@@ -82,7 +82,7 @@ APP_TOKEN     = os.environ.get("APP_TOKEN", "")
 # Vieša svetainės nuoroda (Telegram žinutėse). Per env – kad persikėlus į kitą
 # Vercel account'ą nereikėtų keisti kodo (2026-10-31 fules-online2 išjungtas
 # pasiekus Hobby limitą; prieš tai taip pat buvo keltas iš fules-online)
-PUBLIC_URL    = os.environ.get("PUBLIC_URL", "https://fules-online2.vercel.app").rstrip("/")
+PUBLIC_URL    = os.environ.get("PUBLIC_URL", "https://fules-online-ivory.vercel.app").rstrip("/")
 
 def _auth_ok():
     """Publikavimo/admin endpointų apsauga. Kol APP_TOKEN env nenustatytas – atvira

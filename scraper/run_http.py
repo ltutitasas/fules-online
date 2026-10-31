@@ -26,7 +26,7 @@ TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
 # Vieša nuoroda Telegram žinutėse – per env, kad persikėlus į kitą Vercel
 # account'ą nereikėtų keisti kodo (GitHub repo variable PUBLIC_URL)
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://fules-online2.vercel.app").rstrip("/")
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://fules-online-ivory.vercel.app").rstrip("/")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
