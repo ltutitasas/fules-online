@@ -24,12 +24,13 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 
 | Failas | Paskirtis |
 |---|---|
-| `api/_sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja ir api/index.py, ir run_http.py. ⚠️ Pabraukimas pavadinime BŪTINAS – be jo Vercel bandytų failą paversti atskira funkcija; šakninių failų Vercel į bundle neįtraukia (buvo FUNCTION_INVOCATION_FAILED) |
+| `api/_sites_config.py` | **VIENINTELĖ saitų konfigūracijos vieta** (SITES, HTTP_SITES, slim_art). Importuoja api/index.py, run_http.py ir run_all.py. ⚠️ Pabraukimas pavadinime BŪTINAS – be jo Vercel bandytų failą paversti atskira funkcija; šakninių failų Vercel į bundle neįtraukia (buvo FUNCTION_INVOCATION_FAILED) |
 | `api/index.py` | Flask app, RSS+HTTP scraperiai, frontend HTML/JS, Service Worker, sportas.lt publikavimas. Vienas didelis failas. |
-| `scraper/run_http.py` | Atskiras HTTP-only scraperis GitHub Actions'ui (be Vercel 10s limito) |
+| `scraper/run_all.py` | **Pagrindinis scraperis** (GitHub Actions): RSS + HTTP saitai VIENU KV ciklu, 2 ciklai per runą kas 60 s |
+| `scraper/run_http.py` | HTTP parsiuntimo biblioteka (`fetch_http`, Top Lyga `fetch_text_sig`) – ją naudoja run_all.py. `main()` tik rankiniam atsarginiam paleidimui |
 | `scraper/run_ltok_local.py` | LTOK scraperis, leidžiamas iš namų Mac'o (Cloudflare blokuoja Vercel/Actions IP) |
 | `scraper/setup-ltok.sh` + `lt.fules.ltok.plist.example` | LTOK launchd agento diegimas vienu paleidimu |
-| `.github/workflows/scrape-http.yml` | HTTP scraperio workflow (workflow_dispatch, palaiko `cycles` input) |
+| `.github/workflows/scrape-http.yml` | Scraperio workflow (workflow_dispatch, `cycles` input). ⚠️ Failo vardo NEKEISTI – jį kviečia cron-job.org Job 2 |
 
 ⚠️ 2026-08-05 ištrinti seni dublikatai – **negrąžinti**: `scraper/run.py` +
 `.github/workflows/scrape.yml` (turėjo SAVO pasenusią saitų kopiją) ir
@@ -40,9 +41,12 @@ notificationus ir leidžia vienu paspaudimu publikuoti straipsnius į sportas.lt
 
 ## Perkėlimas į kitą Vercel account'ą
 
-Kartojasi, nes Hobby planas duoda tik **4 val. Fluid Active CPU/mėn**, o vien RSS
-scrape'as prie 2 min ritmo suvartoja lygiai ~4 val. (išmatuota: 0,67 s CPU per runą
+Kartodavosi, nes Hobby planas duoda tik **4 val. Fluid Active CPU/mėn**, o vien RSS
+scrape'as prie 2 min ritmo suvartodavo ~4 val. (išmatuota: 0,67 s CPU per runą
 × 21 600 runų). Pasiekus limitą VISKAS grąžina 402 `DEPLOYMENT_DISABLED`.
+**Nuo 2026-10-31 RSS rinkimas perkeltas į GitHub Actions** (žr. Architektūra) –
+Vercel'yje liko tik dashboard'as, publikavimas ir retas atsarginis RSS runas, tad
+limitas neturėtų būti pasiektas. Žingsniai žemiau – jei vis dėlto prireiktų.
 
 1. Naujas Vercel account'as (kitas el. paštas; Gmail +aliasas tinka) → **Add New
    Project** → importuoti `ltutitasas/fules-online`. Tą patį repo gali naudoti keli
@@ -52,8 +56,8 @@ scrape'as prie 2 min ritmo suvartoja lygiai ~4 val. (išmatuota: 0,67 s CPU per 
    `APP_TOKEN`, `SPORTAS_USER`, `SPORTAS_PASS` ir **`PUBLIC_URL`** = naujas adresas
    (pvz. `https://fules-online3.vercel.app`). Po to – **Redeploy**.
 3. **GitHub** → Settings → Secrets and variables → Actions → **Variables** →
-   `PUBLIC_URL` = tas pats naujas adresas (naudoja run_http.py Telegram žinutėms ir
-   rss_watchdog.py).
+   `PUBLIC_URL` = tas pats naujas adresas (Telegram nuoroda iš Actions). Nebūtina –
+   kode yra atsarginė reikšmė, bet ją tada reikia pakeisti kode.
 4. **cron-job.org Job 1** → pakeisti URL į `https://<naujas>/api/cron-rss`
    (Job 2 nekeisti – jis kreipiasi į GitHub API).
 5. Patikra: `/api/health` (turi rodyti `"pillow": true`), `/api/version` (`count` > 0
@@ -65,14 +69,22 @@ ir `seen_ids` lieka (jokio Telegram spam'o).
 
 ## Atsarginė kopija / rollback
 
-Stabili versija prieš 2026-06-11 optimizaciją išsaugota:
-- **Git tag**: `stabili-2026-06-11`
-- **Šaka**: `backup-stabili` (GitHube)
+**Naujausia stabili versija – prieš RSS perkėlimą į GitHub Actions (2026-10-31):**
+- **Git tag**: `stabili-2026-10-31` · **šaka**: `backup-2026-10-31` (commit `05ae220`)
+- Grįžus atgal reikia ir **cron-job.org Job 1 grąžinti į kas 2 min** (senoje versijoje
+  RSS renka tik Vercel), o Vercel CPU limitas vėl bus pasiektas per ~mėnesį.
+```bash
+git checkout main
+git reset --hard stabili-2026-10-31
+git push --force origin main
+```
+
+Senesni: tag `stabili-2026-07-18`, tag `stabili-2026-06-11` + šaka `backup-stabili`.
 
 Grįžimas nelaimės atveju:
 ```bash
 git checkout main
-git reset --hard stabili-2026-06-11
+git reset --hard <tag>
 git push --force origin main        # Vercel automatiškai deploy'ins seną versiją
 ```
 Arba be force (saugiau, istorija išlieka):
@@ -83,34 +95,50 @@ KV suderinamumas grįžtant: senas kodas naujus raktus ignoruoja, o `recent_ids`
 per 1–2 min (kitas cron runas) perrašys į savo seną formatą. Straipsniai be
 `html_content` publikuojami per URL fallback – veikia abiejose versijose.
 
-## Architektūra: dviejų scraperių sistema
-
-Dėl Vercel 10s limito scrape'inimas padalintas:
+## Architektūra (nuo 2026-10-31)
 
 ```
-cron-job.org Job 1 (kas ~1-2 min)
-  → POST https://<PUBLIC_URL>/api/cron-rss
-  → run_scraper(mode="rss") – TIK RSS saitai, telpa į <10s
-
-cron-job.org Job 2 (kas 2 min)
+cron-job.org Job 2 (kas 2 min) — PAGRINDINIS
   → POST https://api.github.com/repos/ltutitasas/fules-online/actions/workflows/scrape-http.yml/dispatches
      Headers: Authorization: token ghp_xxx (GitHub PAT su repo+workflow teisėm)
      Body: {"ref":"main"}
-  → GitHub Actions paleidžia scraper/run_http.py – HTTP saitai, ~20-25s
+  → GitHub Actions: scraper/run_all.py – RSS + HTTP VIENU KV ciklu,
+    2 ciklai per runą kas 60 s → visi saitai tikrinami ~kas minutę
+
+cron-job.org Job 1 (kas 10 min) — ATSARGINIS
+  → POST https://<PUBLIC_URL>/api/cron-rss → run_scraper(mode="rss") Vercel'yje
+  → RSS + LKL; veikia, kai GitHub Actions sugriuvęs ar lkl.lt blokuoja Actions IP
 ```
+
+**Kodėl taip**: anksčiau RSS rinko Vercel kas 2 min ir suvartodavo visą Hobby
+4 val./mėn CPU limitą (du kartus 402 DEPLOYMENT_DISABLED). Viešam repo GitHub
+Actions be limitų. Vienas KV ciklas visiems saitams kainuoja tiek pat komandų,
+kiek anksčiau vienas RSS arba vienas HTTP ciklas – todėl 2 ciklai/runą = ta pati
+Upstash kaina kaip seniau, bet dvigubai dažnesnis tikrinimas.
+
+**ID suderinamumas (KRITIŠKA)**: run_all.py HTTP saitus parsiunčia `run_http.fetch_http`
+(+ Top Lyga `fetch_text_sig`), RSS – `index._fetch_rss`, t. y. TIKSLIAI tais pačiais
+kodais kaip anksčiau. `index._fetch_http` pavadinimus traukia šiek tiek kitaip
+(papildomi h2/img alt fallback'ai) – jį naudojant HTTP straipsnių ID pasikeistų ir
+visi seni straipsniai atrodytų nauji (Telegram spam'as). Patikrinta 2026-10-31:
+190/190 srautų straipsnių ID sutampa su production KV, LKL Vercel vs Actions – 0 skirtumų.
+
+**Ciklų skaičius ir Upstash kvota**: ~4 KV komandos per ciklą. 2 ciklai × 21 600
+runų/mėn ≈ 173K + dashboard polling'as (iki ~260K, jei kortelė atidaryta parą) ≤ 500K.
+3 ciklai (~kas 40 s) duotų ~260K + polling'as → gali viršyti kvotą. Didinti tik
+sumažinus dashboard polling'ą.
+
+**Deterministinė tvarka**: `merged.sort` turi tie-break `(data, ar_parsiųstas, id)`.
+Be jo vienodos datos straipsniai likdavo gijų užsibaigimo tvarka → articles_hash
+keisdavosi kas runą → ~100KB `articles` perrašomas be jokio pokyčio.
 
 **SVARBU – merge strategija**: abu scraperiai rašo į tą patį KV raktą `articles`.
 Niekada ne-overwrite'ina: `merged = nauji + [seni kurių id nesikartoja]`, tada
 `merged.sort(key=_sort_key, reverse=True)` ir saugoma `merged[:300]`.
 Be šito vienas scraperis ištrintų kito straipsnius.
 
-**RSS budėtojas**: `scraper/rss_watchdog.py` (paleidžiamas scrape-http.yml gale)
-tikrina `/api/scrape-status` ir, jei RSS saitai nescrape'inti >15 min, pats
-paleidžia `/api/cron-rss`. Reikalingas todėl, kad **cron-job.org Job 1 po mūsų
-svetainės gedimų automatiškai išsijungia** (2026-08-05 Vercel maršrutų lūžis,
-2026-10-26 Upstash kvota) – abu kartus RSS stovėjo PARAS. Job 2 nenukenčia, nes
-kreipiasi į GitHub API. Kaina normaliu režimu – 1 KV skaitymas per runą.
-⚠️ Job 1 vis tiek reikia įjungti rankomis cron-job.org – watchdog tik gelbsti.
+⚠️ **cron-job.org Job 1 po mūsų svetainės gedimų automatiškai išsijungia**
+(2026-08-05, 2026-10-26). Dabar tai tik atsarginis kelias – RSS nesustoja.
 
 **Kodėl ne GitHub Actions schedule**: free repo scheduled workflows GitHub
 throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – patikimas.
@@ -129,7 +157,7 @@ throttlina (vietoj kas 20 min realiai kas 8-12h). workflow_dispatch per API – 
 | `recent_ids` | JSON **dict** | 3 h | {id: iso} – KAUPIAMAS (ne perrašomas!), įrašai senesni nei 3h išmetami kiekvieno runo metu |
 | `scrape_status` | JSON dict | 7 d. | {site: {ok, n}} – kada saitas paskutinį kartą grąžino straipsnių (`/api/scrape-status`). „ok" atnaujinamas tik kas ~10 min (KV komandų taupymas) |
 | `html_ids` | JSON dict | 2 d. | {id: iso kada įrašytas html:{id}} – indeksas vietoj EXISTS lavinos (buvo ~200 EXISTS/runą = 93% kvotos!). Įrašas galioja 46h, tada html perrašomas |
-| `tl_hist` | JSON dict | 7 d. | {url: {title, full:[sakiniai], versions:[{ts,title,added,removed,title_from}]}} – Top Lyga (renotify_on_text saitų) versijų istorija „kas pasikeitė". Rašo TIK `run_http.py` ir TIK kai straipsnis pakito (id ∈ new_ids); rodo `/api/tl-history`. Max 25 URL / 15 versijų |
+| `tl_hist` | JSON dict | 7 d. | {url: {title, full:[sakiniai], versions:[{ts,title,added,removed,title_from}]}} – Top Lyga (renotify_on_text saitų) versijų istorija „kas pasikeitė". Rašo `run_all.py` (`tl_hist_writes`) TIK kai straipsnis pakito (id ∈ new_ids); rodo `/api/tl-history`. Max 25 URL / 15 versijų |
 
 Visi KV skaitymai/rašymai scraperiuose eina per **pipeline** (`_kv_pipeline` /
 `kv_pipeline`) – vienas HTTP request'as vietoj 5-6 round-trip'ų.
@@ -153,14 +181,14 @@ Dabar 30 d. + merged sort pagal datą sprendžia šią problemą.
 
 ## Saitų konfigūracija (`api/_sites_config.py`)
 
-### RSS saitai (scrape'ina Vercel kas ~1 min)
+### RSS saitai (GitHub Actions run_all.py ~kas minutę; atsarginis – Vercel kas 10 min)
 ⚽ FK Banga, FC Džiugas, FC Hegelmann, FK Panevėžys, FK Sūduva, FK TransINVEST,
 FA Šiauliai, FK Žalgiris, LFF
 🏀 BC Kibirkštis, BC Neptūnas, BC Lietkabelis, BC Šiauliai, Utenos Juventus,
 Lietuva Basketball, BC Rytas
 🏅 Lengvoji atletika (lengvoji.lt), LTU Aquatics (ltuaquatics.com)
 
-### HTTP saitai (scrape'ina GitHub Actions kas 2 min)
+### HTTP saitai (GitHub Actions run_all.py ~kas minutę)
 ⚽ Top Lyga (toplyga.lt), Žalgiris futbolas (zalgiris.lt)
 🏅 **LTOK (ltok.lt)** – Cloudflare 403 Vercel/GH Actions IP. Lokalus scraperis:
    `scraper/run_ltok_local.py` (Mac launchd kas 10 min, šablonas lt.fules.ltok.plist.example).
@@ -289,7 +317,8 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
   `/api/cron`, `/api/cron-rss` (juos kviečia cron-job.org be tokeno!).
 
 ### Telegram
-- Siunčia ir Vercel (`run_scraper`), ir GitHub Actions (`run_http.py`) – kiekvienas už savo saitus
+- Siunčia `run_scraper` (Actions per run_all.py ir atsarginis Vercel runas); dublikatus
+  blokuoja atominis `notified_ids` SADD (raktas pagal saitą+pavadinimą)
 - Tik kai `new_ids` netuščias IR `seen_ids` netuščias (pirmo paleidimo apsauga nuo spam)
 - Tik straipsniai, kurių `first_seen` < 24h
 - Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (Vercel env + GitHub secrets)
@@ -300,7 +329,9 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
    siunčia `br`. VISUR `Accept-Encoding: "gzip, deflate"` (be br!). Buvo hockey.lt/lkl.lt bug'as.
 2. **Vercel 10s**: `/api/cron-rss` og:image fallback timeout 2s (rss mode), kitur 4s.
    Nepridėti lėtų operacijų į RSS kelią.
-3. **KV tinklo trukdžiai GitHub Actions**: `run_http.py` turi `_kv_retry` (3 bandymai po 4s).
+3. **KV tinklo trukdžiai GitHub Actions**: run_all.py nepavykęs ciklas tiesiog praleidžiamas
+   (kitas ciklas tą patį padaro). Žemo lygio retry SĄMONINGAI nėra – pakartotas
+   `SADD notified_ids` grąžintų 0 ir Telegram pranešimas būtų prarastas.
 4. **GitHub Actions schedule nepatikimas** – naudoti tik workflow_dispatch per API.
 5. **LTOK = Cloudflare 403 iš debesies** (patikrinta 2026-07-22: 403 ir sąrašui, ir
    sitemap, ir `_payload.json`). Nebandyti grąžinti į Vercel/Actions – veikia tik
@@ -374,7 +405,7 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
 - `/api/article-text` atsakymo `up_status` – upstream HTTP statusas (WAF diagnostikai).
 - `/api/tl-history` – Top Lyga versijų istorija: kiekvieno mačo laiko juosta su diff'u
   (➕ pridėti / ➖ pašalinti sakiniai, 📝 pavadinimo pakeitimai X→Y). Token'u apsaugotas.
-  Duomenis kaupia `run_http.py` į `tl_hist` (tik pokyčio metu, 0 naujų HTTP – tekstas
+  Duomenis kaupia `run_all.py` į `tl_hist` (tik pokyčio metu, 0 naujų HTTP – tekstas
   imamas iš jau atsisiųsto `fetch_text_sig` puslapio). Frontend mygtukas „📜 Top Lyga pakeitimai".
 - GitHub Actions logs: https://github.com/ltutitasas/fules-online/actions
 - cron-job.org dashboard – execution history (200 OK / 204 No Content = OK)

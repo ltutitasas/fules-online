@@ -82,7 +82,10 @@ APP_TOKEN     = os.environ.get("APP_TOKEN", "")
 # Vieša svetainės nuoroda (Telegram žinutėse). Per env – kad persikėlus į kitą
 # Vercel account'ą nereikėtų keisti kodo (2026-10-31 fules-online2 išjungtas
 # pasiekus Hobby limitą; prieš tai taip pat buvo keltas iš fules-online)
-PUBLIC_URL    = os.environ.get("PUBLIC_URL", "https://fules-online-ivory.vercel.app").rstrip("/")
+PUBLIC_URL    = (os.environ.get("PUBLIC_URL") or "https://fules-online-ivory.vercel.app").rstrip("/")
+# GitHub Actions (scraper/run_all.py) neturi Vercel 10s limito – ten leidžiam
+# ilgesnius timeout'us ir didesnę nuotraukų eilę (mažiau straipsnių be foto)
+_IN_ACTIONS   = os.environ.get("GITHUB_ACTIONS") == "true"
 
 def _auth_ok():
     """Publikavimo/admin endpointų apsauga. Kol APP_TOKEN env nenustatytas – atvira
@@ -626,7 +629,7 @@ def _fetch_rss(site):
     try:
         # requests su timeout (feedparser.parse(url) timeout neturi – pakibęs
         # feedas kabintų visą funkciją iki Vercel 10s kill)
-        rr = _req.get(site["rss"], timeout=6,
+        rr = _req.get(site["rss"], timeout=10 if _IN_ACTIONS else 6,
                       headers={"User-Agent": _UA, "Accept-Encoding": "gzip, deflate"})
         feed = feedparser.parse(rr.content)
         arts = []
@@ -780,8 +783,15 @@ _IMG_DBG = {}   # laikina og/REST nuotraukų diagnostika (rodo /api/cron-rss)
 # fchegelmann.com naujienos lėkdavo į Telegram). Rodo /api/cron-rss.
 _NEW_DBG = []
 
-def run_scraper(mode="all"):
-    """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)"""
+def run_scraper(mode="all", http_fetch=None, extra_writes=None):
+    """mode: 'all' | 'rss' (tik RSS, greita, <10s) | 'http' (tik HTTP saitai)
+
+    http_fetch   – HTTP saito parsiuntimo funkcija (site -> [straipsniai]). GitHub
+                   Actions (scraper/run_all.py) paduoda run_http.fetch_http su Top
+                   Lyga teksto parašais – kad ID būtų IDENTIŠKI ankstesniems
+                   (_fetch_http pavadinimus traukia šiek tiek kitaip).
+    extra_writes – (all_arts, new_ids, now_iso) -> [KV komandos], pridedamos į
+                   bendrą rašymo pipeline (Top Lyga tl_hist versijų istorija)."""
     now_iso0 = datetime.now(timezone.utc).isoformat()
     rss_sites  = [s for s in _SITES if "rss" in s]   if mode != "http" else []
     # rss režime papildomai imami HTTP saitai su also_vercel (pvz. LKL, kurį
@@ -794,7 +804,7 @@ def run_scraper(mode="all"):
     _status_updates = {}   # {site: {"ok","n"}} – merge'inam į scrape_status po KV skaitymo
     with ThreadPoolExecutor(max_workers=16) as ex:
         futs = {ex.submit(_fetch_rss, s): s for s in rss_sites}
-        futs.update({ex.submit(_fetch_http, s): s for s in http_sites})
+        futs.update({ex.submit(http_fetch or _fetch_http, s): s for s in http_sites})
         for fut in as_completed(futs):
             site = futs[fut]
             try:
@@ -909,7 +919,8 @@ def run_scraper(mode="all"):
             # HTML fallback beprasmis – puslapis lėtesnis už rss timeout
             return art["id"], None
         try:
-            r = _req.get(art["url"], headers={"User-Agent": _UA}, timeout=2 if mode=="rss" else 4)
+            r = _req.get(art["url"], headers={"User-Agent": _UA},
+                         timeout=6 if _IN_ACTIONS else (2 if mode=="rss" else 4))
             html = r.text
             sel = _SITE_IMG_SEL.get(art["site"], "")
             # 1. CSS selektorius pirmas (kai nurodytas) – tikslus herojinis paveikslas
@@ -958,10 +969,12 @@ def run_scraper(mode="all"):
         # Naujausi pirmiau; max 6 per runą (viena lygiagreti banga) – kad sukaupti
         # neišspręsti paveikslai (lėti/mirę puslapiai) nekirstų Vercel 10s limito
         arts_no_img.sort(key=lambda a: a["id"] not in new_ids)
-        arts_no_img = arts_no_img[:6]
+        # Actions – be 10s limito, tad eilė didesnė (12), kitur 6
+        _img_cap = 12 if _IN_ACTIONS else 6
+        arts_no_img = arts_no_img[:_img_cap]
         _IMG_DBG["tried"] = [a["site"] for a in arts_no_img]
         _IMG_DBG["resolved"] = 0
-        with ThreadPoolExecutor(max_workers=6) as ex:
+        with ThreadPoolExecutor(max_workers=min(_img_cap, 8)) as ex:
             for aid, img in ex.map(_fetch_og_image, arts_no_img):
                 if img:
                     _IMG_DBG["resolved"] += 1
@@ -994,7 +1007,8 @@ def run_scraper(mode="all"):
                              "date": str(a.get("date", ""))[:25],
                              "fs": a["id"] in _fs_before})
 
-    all_arts.sort(key=_sort_key, reverse=True)
+    # Deterministinė tvarka (žr. merged.sort komentarą žemiau)
+    all_arts.sort(key=lambda a: (_sort_key(a), a.get("id", "")), reverse=True)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
     recent_ids = []
     for art in all_arts:
@@ -1025,7 +1039,14 @@ def run_scraper(mode="all"):
     merged = sorted_arts + [a for a in existing
                             if a["id"] not in _fetched_ids
                             and _norm_url(a.get("url", "")) not in _fetched_urls]
-    merged.sort(key=_sort_key, reverse=True)  # persortavimas po merge (recent_ids viršuje per API /articles)
+    # Persortavimas po merge. Lygiai vienodos datos (pvz. HTTP saitų straipsniai,
+    # kuriems data priskiriama pirmo pamatymo metu) anksčiau likdavo gijų
+    # užsibaigimo tvarka – kas runą vis kita, tad articles_hash keisdavosi ir
+    # ~100KB articles būdavo perrašomas KAS RUNĄ be jokio realaus pokyčio.
+    # Tie-break: ką tik parsiųsti pirmiau už senus (nuo to priklauso dedup
+    # žemiau – lieka dabartinis URL), toliau pagal id (deterministiška).
+    merged.sort(key=lambda a: (_sort_key(a), a["id"] in _fetched_ids, a.get("id", "")),
+                reverse=True)
     # Dedup pagal (saitas, pavadinimas): tas pats straipsnis kartais gyvena dviem
     # URL – WordPress pervadina slug'ą (/127725-2/ → /svarbia-pergale.../), o
     # lengvoji.lt tą patį įrašą rodo per dvi kategorijas. Sort stabilus, tad
@@ -1094,6 +1115,11 @@ def run_scraper(mode="all"):
         write_cmds.append(["SET", "dates_cache", json.dumps(dates_cache), "EX", 86400*30])
     if first_seen_changed:
         write_cmds.append(["SET", "first_seen", json.dumps(first_seen), "EX", 86400*30])
+    if extra_writes:
+        try:
+            write_cmds.extend(extra_writes(all_arts, new_ids, now_iso) or [])
+        except Exception as _xe:
+            print(f"⚠️  extra_writes klaida: {_xe}")
     _kv_pipeline(write_cmds)
 
     # RSS HTML – atskiruose raktuose html:{id}, kad articles sąrašas liktų mažas.

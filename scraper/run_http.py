@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""HTTP-only scraper – lkl.lt, toplyga.lt, zalgiris.lt ir kt.
-Paleidžiamas per GitHub Actions (workflow_dispatch) via cron-job.org.
-Naudoja merge strategiją – neperrašo RSS straipsnių KV.
-Saitų sąrašas – bendras sites_config.py (repo šaknyje)."""
+"""HTTP saitų parsiuntimas (lkl.lt, toplyga.lt, zalgiris.lt ir kt.).
+
+Nuo 2026-10-31 GitHub Actions leidžia scraper/run_all.py, kuris iš čia ima
+fetch_http + fetch_text_sig + _sentences (tam, kad HTTP straipsnių ID liktų
+IDENTIŠKI ankstesniems), o merge/KV/Telegram daro api/index.py:run_scraper.
+main() žemiau – tik rankiniam atsarginiam paleidimui (python scraper/run_http.py),
+automatiškai nebeleidžiamas.
+Saitų sąrašas – api/_sites_config.py."""
 
 import json, os, sys, hashlib, time, re as _re_mod, requests as _req
 from bs4 import BeautifulSoup
@@ -26,7 +30,7 @@ TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
 # Vieša nuoroda Telegram žinutėse – per env, kad persikėlus į kitą Vercel
 # account'ą nereikėtų keisti kodo (GitHub repo variable PUBLIC_URL)
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://fules-online-ivory.vercel.app").rstrip("/")
+PUBLIC_URL = (os.environ.get("PUBLIC_URL") or "https://fules-online-ivory.vercel.app").rstrip("/")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")

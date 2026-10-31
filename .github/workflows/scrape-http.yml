@@ -1,21 +1,23 @@
-name: Scrape HTTP saitai
+# ⚠️ Failo vardo NEKEISTI – cron-job.org Job 2 kreipiasi į
+# /actions/workflows/scrape-http.yml/dispatches (kas 2 min).
+name: Scrape RSS + HTTP saitai
 
 on:
   workflow_dispatch:
     inputs:
       cycles:
-        description: 'Kiek scrape ciklų atlikti viename rune (su 40s pauzėm)'
+        description: 'Kiek scrape ciklų viename rune (kas CYCLE_INTERVAL s)'
         required: false
-        default: '1'
+        default: '2'
 
-# Vienu metu – tik VIENAS runas. Naujas dispatch'as atšaukia ankstesnį (queued
-# arba dar besisukantį). Be šito, kai GitHub Actions strigo (2026-08-05 major
-# outage), kas 2 min siunčiami runai kaupėsi šimtais ir atsigavus būtų pasileidę
-# vienu metu – užklausų antplūdis į scrape'inamus saitus (lkl.lt blokuoja).
-# Scrape'as idempotentiškas: nutrauktas runas nieko nesugadina, kitas padaro tą patį.
+# Vienu metu – tik VIENAS runas, o laukti gali daugiausiai vienas (GitHub naujesnį
+# laukiantį pakeičia, seną laukiantį atšaukia) – runai nesikaupia net per GitHub
+# gedimus (2026-08-05 major outage susikaupė 100+). cancel-in-progress: false –
+# besisukantis runas NENUTRAUKIAMAS, kad ciklas nebūtų nukirstas pusiaukelėje
+# (tarp notified_ids įrašymo ir Telegram išsiuntimo).
 concurrency:
   group: scrape-http
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   scrape:
@@ -31,24 +33,18 @@ jobs:
           cache: 'pip'
 
       - name: Įdiegti priklausomybes
-        run: pip install requests beautifulsoup4 lxml
+        run: pip install requests beautifulsoup4 lxml feedparser flask
 
-      - name: Paleisti HTTP scraperį
+      # RSS + HTTP vienu KV ciklu (scraper/run_all.py). 2 ciklai kas 60 s:
+      # runas paleidžiamas kas 2 min, tad saitai tikrinami ~kas minutę – už tą
+      # pačią Upstash kainą, kaip anksčiau RSS (Vercel) + HTTP (Actions) atskirai.
+      - name: Paleisti scraperį
         env:
           KV_REST_API_URL:      ${{ secrets.KV_REST_API_URL }}
           KV_REST_API_TOKEN:    ${{ secrets.KV_REST_API_TOKEN }}
           TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
-          CYCLES:               ${{ github.event.inputs.cycles || '1' }}
+          CYCLES:               ${{ github.event.inputs.cycles || '2' }}
+          CYCLE_INTERVAL:       '60'
           PUBLIC_URL:           ${{ vars.PUBLIC_URL }}
-        run: python scraper/run_http.py
-
-      # RSS budėtojas: cron-job.org Job 1 po mūsų svetainės gedimų jau DU kartus
-      # automatiškai išsijungė (2026-08-05, 2026-10-26) ir RSS naujienos stovėjo
-      # paromis. Šis workflow nenukenčia (kreipiasi į GitHub API), tad tikrina ir
-      # prireikus paleidžia RSS pats. Normaliai – 1 KV skaitymas per runą.
-      - name: RSS watchdog
-        continue-on-error: true
-        env:
-          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
-        run: python scraper/rss_watchdog.py
+        run: python scraper/run_all.py
