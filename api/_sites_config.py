@@ -98,6 +98,10 @@ SITES = [
      "link_pattern_re": r"/index\.php/naujienos/[^/]+/\d+",
      "base_url":"https://www.hockey.lt",
      "og_image_fallback": True, "image_selector":".news_item_img img",
+     # Straipsnio puslapio img – _2.php (165x110), sąraše _3/_4; pilnas dydis (820x547)
+     # yra _1 (tą patį rodo og:image). Be .php, nes publikuojant failo vardas
+     # imamas iš URL ir „.php" jame sportas.lt įkėlimui netinka
+     "img_replace_re": [r"_\d+(\.php)?$", "_1"],
      "text_selector":".short_text"},
     # LTOK – Cloudflare 403 "Just a moment..." blokuoja Vercel ir GitHub Actions IP
     # (patikrinta 2026-07-22: visi keliai, įskaitant sitemap ir _payload.json).

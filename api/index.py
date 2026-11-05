@@ -983,6 +983,15 @@ def run_scraper(mode="all", http_fetch=None, extra_writes=None, rss_fetch=None):
                     for a in all_arts:
                         if a["id"] == aid: a["image"] = img; break
 
+    # Per-saito nuotraukos URL korekcijos (fix_img) galutiniam rezultatui: selektorius
+    # ir og:image jų dar nepraėjo, o iš KV atkurti/seni įrašai gali būti blogo dydžio
+    # (hockey.lt _2.php 165x110 → _1 820x547). Korekcijos idempotentiškos.
+    _site_cfg_by_name = {s["name"]: s for s in _SITES}
+    for a in all_arts + existing:
+        _c = _site_cfg_by_name.get(a.get("site"))
+        if _c and a.get("image"):
+            a["image"] = _fix_img(_c, a["image"])
+
     # Datos: naujoms be datos – fiksuojame dabar; senoms – atkuriame iš cache
     now_iso = datetime.now(timezone.utc).isoformat()
     dates_changed = False

@@ -338,6 +338,9 @@ Frontend (HTML/JS) yra `_INDEX_HTML` stringe, Service Worker – `_SW_JS` string
    lokalus `run_ltok_local.py` iš namų IP.
 6. **`merged.sort()` būtinas** po merge – kitaip seni straipsniai atsiduria viršuje.
 7. **image_selector > og:image** – og:image kartais rodo ne herojinę nuotrauką (FK Žalgiris atvejis).
+   Bet selektorius gali rodyti mažą variantą: hockey.lt `.news_item_img img` = `_2.php`
+   (165x110), pilnas = `_1` (820x547) – tam `img_replace_re`. `fix_img` taikomas galutiniam
+   `run_scraper` rezultatui (selektorius, og:image, KV įrašai), ne tik sąrašo paveikslui.
 8. **`articles` KV yra SLIM** – be `html_content`/`text`. Publikavimui HTML imamas iš
    `html:{id}` rakto, o jo nesant – fallback parsisiunčia iš straipsnio URL (`_do_post`).
 9. **Paveikslai cache'inami** – og:image/image_selector fetch daromas tik straipsniams,
